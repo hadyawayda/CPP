@@ -1,58 +1,68 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   phonebook.cpp                                      :+:      :+:    :+:   */
+/*   Phonebook.cpp                                      :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hawayda <hawayda@student.42.fr>            +#+  +:+       +#+        */
+/*   By: hawayda <hawayda@student.42beirut.com>     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/07/17 20:28:47 by hawayda           #+#    #+#             */
-/*   Updated: 2025/07/17 20:28:47 by hawayda          ###   ########.fr       */
+/*   Created: 2025/07/20 17:09:34 by hawayda           #+#    #+#             */
+/*   Updated: 2025/07/20 17:09:34 by hawayda          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "Phonebook.hpp"
+#include "PhoneBook.hpp"
+#include <iostream>
+#include <iomanip>
+#include <limits>
 
-PhoneBook::PhoneBook() : _nextSlot(0), _nbContacts(0) {}
+PhoneBook::PhoneBook()
+    : _contacts(), _nextSlot(0), _nbContacts(0)
+{}
 
-void PhoneBook::addContact(void)
+void PhoneBook::addContact()
 {
     Contact &c = _contacts[_nextSlot];
     c.fill();
-    if (!c.isEmpty())
-    {
+    if (!c.isEmpty()) {
+        // advance nextSlot in circular buffer
         _nextSlot = (_nextSlot + 1) % 8;
         if (_nbContacts < 8)
             ++_nbContacts;
-        std::cout << "✔ Contact saved!" << std::endl;
+        std::cout << "✔ Contact saved!\n";
     }
 }
 
-void PhoneBook::searchContact(void) const
+void PhoneBook::searchContact() const
 {
-    if (_nbContacts == 0)
-    {
-        std::cout << "PhoneBook is empty." << std::endl;
+    if (_nbContacts == 0) {
+        std::cout << "PhoneBook is empty.\n";
         return;
     }
-    std::cout << std::setw(10) << "Index" << '|'
-              << std::setw(10) << "First name" << '|'
-              << std::setw(10) << "Last name"  << '|'
-              << std::setw(10) << "Nickname"   << std::endl;
+
+    // Header
+    std::cout
+        << std::setw(10) << "Index"      << '|'
+        << std::setw(10) << "First name" << '|'
+        << std::setw(10) << "Last name"  << '|'
+        << std::setw(10) << "Nickname"   << '\n';
+
+    // Rows
     for (int i = 0; i < _nbContacts; ++i)
         _contacts[i].displayInline(i);
 
+    // Select one
     std::cout << "Index to display > ";
-    int idx = -1;
-    if (!(std::cin >> idx))
-    {
+    int idx;
+    if (!(std::cin >> idx)) {
         std::cin.clear();
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        std::cout << "Invalid input!" << std::endl;
+        std::cout << "Invalid input!\n";
         return;
     }
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
     if (idx < 0 || idx >= _nbContacts)
-        std::cout << "Index out of range." << std::endl;
+        std::cout << "Index out of range.\n";
     else
         _contacts[idx].displayFull();
 }

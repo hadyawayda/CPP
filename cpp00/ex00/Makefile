@@ -9,7 +9,7 @@ OBJDIR				:= objs
 NAME				:= megaphone
 CXX					:= c++
 RM					:= @rm -rf
-CXXFLAGS			:= -Wall -Wextra -Werror -std=c++98 -I includes
+CXXFLAGS			:= -Wall -Wextra -Werror -std=c++98
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SOURCES & OBJECTS

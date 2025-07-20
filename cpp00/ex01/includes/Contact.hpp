@@ -1,12 +1,12 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   contact.hpp                                        :+:      :+:    :+:   */
+/*   Contact.hpp                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: hawayda <hawayda@student.42.fr>            +#+  +:+       +#+        */
+/*   By: hawayda <hawayda@student.42beirut.com>     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/07/17 20:17:24 by hawayda           #+#    #+#             */
-/*   Updated: 2025/07/17 20:17:24 by hawayda          ###   ########.fr       */
+/*   Created: 2025/07/20 17:06:52 by hawayda           #+#    #+#             */
+/*   Updated: 2025/07/20 17:06:52 by hawayda          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,7 @@
 #define CONTACT_HPP
 
 #include <string>
+#include <limits>
 #include <iostream>
 #include <iomanip>
 
@@ -21,12 +22,16 @@ class Contact {
 public:
     Contact();
 
+    // Prompt user until a non-empty line is read for each field
     void        fill();
 
+    // True if this contact was never filled
     bool        isEmpty() const;
 
-    void        displayInline(int index) const;
+    // Print one line (idx | 10-char first | 10-char last | 10-char nick)
+    void        displayInline(int idx) const;
 
+    // Print all five fields, one per line
     void        displayFull() const;
 
 private:
