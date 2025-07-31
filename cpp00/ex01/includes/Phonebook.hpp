@@ -6,32 +6,33 @@
 /*   By: hawayda <hawayda@student.42beirut.com>     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/07/20 17:09:06 by hawayda           #+#    #+#             */
-/*   Updated: 2025/07/20 17:09:06 by hawayda          ###   ########.fr       */
+/*   Updated: 2025/08/01 00:32:05 by hawayda          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #ifndef PHONEBOOK_HPP
-#define PHONEBOOK_HPP
+# define PHONEBOOK_HPP
 
-#include "Contact.hpp"
-#include <iostream>
-#include <iomanip>
-#include <limits>
+# include "Contact.hpp"
+# include <cstring>
+# include <iomanip>
+# include <iostream>
+# include <limits>
+# include <sstream>
 
-class PhoneBook {
-public:
-    PhoneBook();
+class PhoneBook
+{
+  public:
+	PhoneBook();
+	void add();
+	void search();
+	void display();
 
-    // Prompt for a new contact and store it (overwrite oldest if full)
-    void addContact();
+	int index;
 
-    // Show a table of saved contacts, then detailed view by index
-    void searchContact() const;
-
-private:
-    Contact _contacts[8];
-    int     _nextSlot;    // next index to write (0–7)
-    int     _nbContacts;  // how many are filled (≤8)
+  private:
+	static int counter;
+	Contact _contacts[8];
 };
 
 #endif

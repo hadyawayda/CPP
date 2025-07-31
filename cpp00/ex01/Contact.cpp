@@ -6,63 +6,60 @@
 /*   By: hawayda <hawayda@student.42beirut.com>     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/07/20 17:08:54 by hawayda           #+#    #+#             */
-/*   Updated: 2025/07/20 17:08:54 by hawayda          ###   ########.fr       */
+/*   Updated: 2025/07/31 21:13:44 by hawayda          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "Contact.hpp"
 
-Contact::Contact()
-    : _firstName(), _lastName(), _nickname(), _phone(), _secret()
-{}
+Contact::Contact() {}
 
-std::string Contact::_readNonEmpty(const std::string& prompt)
+std::string Contact::getFirstName()
 {
-    std::string input;
-    do {
-        std::cout << prompt;
-        if (!std::getline(std::cin, input))
-            return std::string();  // EOF
-    } while (input.empty());
-    return input;
+	return (this->_firstName);
 }
 
-void Contact::fill()
+void Contact::setFirstName(std::string firstName)
 {
-    _firstName = _readNonEmpty("First name      : ");
-    _lastName  = _readNonEmpty("Last name       : ");
-    _nickname  = _readNonEmpty("Nickname        : ");
-    _phone     = _readNonEmpty("Phone number    : ");
-    _secret    = _readNonEmpty("Darkest secret  : ");
+	this->_firstName = firstName;
 }
 
-bool Contact::isEmpty() const
+std::string Contact::getLastName()
 {
-    return _firstName.empty();
+	return (this->_lastName);
 }
 
-std::string Contact::_formatField(const std::string& str)
+void Contact::setLastName(std::string lastName)
 {
-    if (str.length() > 10)
-        return str.substr(0, 9) + ".";
-    return str;
+	this->_lastName = lastName;
 }
 
-void Contact::displayInline(int idx) const
+std::string Contact::getNickname()
 {
-    std::cout
-        << std::setw(10) << idx << '|'
-        << std::setw(10) << _formatField(_firstName) << '|'
-        << std::setw(10) << _formatField(_lastName)  << '|'
-        << std::setw(10) << _formatField(_nickname)  << '\n';
+	return (this->_nickname);
 }
 
-void Contact::displayFull() const
+void Contact::setNickname(std::string nicknam)
 {
-    std::cout
-        << "First name     : " << _firstName << '\n'
-        << "Last name      : " << _lastName  << '\n'
-        << "Nickname       : " << _nickname  << '\n'
-        << "Phone number   : " << _phone     << '\n'
-        << "Darkest secret : " << _secret    << '\n';
+	this->_nickname = nicknam;
+}
+
+std::string Contact::getPhone()
+{
+	return (this->_phone);
+}
+
+void Contact::setPhone(std::string phone)
+{
+	this->_phone = phone;
+}
+
+std::string Contact::getSecret()
+{
+	return (this->_secret);
+}
+
+void Contact::setSecret(std::string secret)
+{
+	this->_secret = secret;
 }

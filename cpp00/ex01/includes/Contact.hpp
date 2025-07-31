@@ -1,48 +1,37 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Contact.hpp                                        :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: hawayda <hawayda@student.42beirut.com>     +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/07/20 17:06:52 by hawayda           #+#    #+#             */
-/*   Updated: 2025/07/20 17:06:52 by hawayda          ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #ifndef CONTACT_HPP
-#define CONTACT_HPP
+# define CONTACT_HPP
 
-#include <string>
-#include <limits>
-#include <iostream>
-#include <iomanip>
+# include <iomanip>
+# include <iostream>
+# include <limits>
+# include <string>
 
-class Contact {
-public:
-    Contact();
+class Contact
+{
+  public:
+	Contact();
 
-    // Prompt user until a non-empty line is read for each field
-    void        fill();
+	std::string getFirstName();
+	void setFirstName(std::string firstName);
 
-    // True if this contact was never filled
-    bool        isEmpty() const;
+	std::string getLastName();
+	void setLastName(std::string lastName);
 
-    // Print one line (idx | 10-char first | 10-char last | 10-char nick)
-    void        displayInline(int idx) const;
+	std::string getNickname();
+	void setNickname(std::string nickname);
 
-    // Print all five fields, one per line
-    void        displayFull() const;
+	std::string getPhone();
+	void setPhone(std::string phone);
 
-private:
-    std::string _firstName;
-    std::string _lastName;
-    std::string _nickname;
-    std::string _phone;
-    std::string _secret;
+	std::string getSecret();
+	void setSecret(std::string secret);
 
-    static std::string _readNonEmpty(const std::string& prompt);
-    static std::string _formatField(const std::string& str);
+  private:
+	std::string _firstName;
+	std::string _lastName;
+	std::string _nickname;
+	std::string _phone;
+	std::string _secret;
 };
 
 #endif
