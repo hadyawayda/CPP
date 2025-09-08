@@ -65,3 +65,7 @@ unit-tester/
 
 # Config Files
 *.ini
+
+# Testing files
+*.csv
+*.txt
