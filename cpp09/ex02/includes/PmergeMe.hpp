@@ -8,26 +8,31 @@
 
 class PmergeMe {
 public:
-    struct Metrics {
-        size_t pairComparisons;          // while making (min,max) pairs
-        size_t pairSortComparisons;      // comparisons during sorting of pairs
-        size_t binarySearchComparisons;  // comparisons in lower_bound
-        size_t inserts;                  // number of insert operations
-        size_t elementMoves;             // only meaningful for std::vector
+    // Canonical Orthodox Form
+    PmergeMe() {}
+    PmergeMe(const PmergeMe&) {}
+    PmergeMe& operator=(const PmergeMe&) { return *this; }
+    ~PmergeMe() {}
 
-        Metrics()
-        : pairComparisons(0), pairSortComparisons(0),
-          binarySearchComparisons(0), inserts(0), elementMoves(0) {}
+    struct Ops {
+        size_t pairLocalCompares;   // local compares in (min,max) pairing
+        size_t pairMergeCompares;   // compares during stable sort of pairs by max
+        size_t binarySearchCompares;// compares in bounded lower_bound
+        size_t pairLocalSwaps;      // kept for display; do NOT increment
+        size_t inserts;             // kept for display; do NOT increment
+        size_t shifts;              // informational only (vector shifts)
+
+        Ops() : pairLocalCompares(0), pairMergeCompares(0),
+                binarySearchCompares(0), pairLocalSwaps(0),
+                inserts(0), shifts(0) {}
     };
 
-    // Parse argv into positive integers (>0). Accepts numbers separated by spaces inside args.
     static bool parseArgs(int argc, char** argv,
                           std::vector<unsigned int>& outVec,
                           std::deque<unsigned int>&  outDeq);
 
-    // Sort using a Ford–Johnson style merge-insert with Jacobsthal insertion order.
-    static void sortVector(std::vector<unsigned int>& v, Metrics* m = 0);
-    static void sortDeque (std::deque<unsigned int>&  d, Metrics* m = 0);
+    static void sortVector(std::vector<unsigned int>& v, Ops* ops = 0);
+    static void sortDeque (std::deque <unsigned int>& d, Ops* ops = 0);
 };
 
 #endif

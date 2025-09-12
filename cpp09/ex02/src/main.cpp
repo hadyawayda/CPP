@@ -1,12 +1,12 @@
 #include "PmergeMe.hpp"
 #include <iostream>
-#include <sys/time.h> // gettimeofday
-#include <iomanip>
+#include <sys/time.h>
+#include <vector>
+#include <deque>
 
 static long long nowMicros() {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return static_cast<long long>(tv.tv_sec) * 1000000LL + tv.tv_usec;
+    timeval tv; gettimeofday(&tv, 0);
+    return (long long)tv.tv_sec * 1000000LL + tv.tv_usec;
 }
 
 template <typename Cont>
@@ -26,43 +26,43 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Before
     printLine("Before:", refV);
 
-    // Vector
     std::vector<unsigned int> v = refV;
-    PmergeMe::Metrics mv;
+    std::deque<unsigned int>  d = refD;
+
+    PmergeMe::Ops ov, od;
+
     long long t0 = nowMicros();
-    PmergeMe::sortVector(v, &mv);
+    PmergeMe::sortVector(v, &ov);
     long long t1 = nowMicros();
 
-    // Deque
-    std::deque<unsigned int> d = refD;
-    PmergeMe::Metrics md;
     long long t2 = nowMicros();
-    PmergeMe::sortDeque(d, &md);
+    PmergeMe::sortDeque(d, &od);
     long long t3 = nowMicros();
 
-    // After (use the vector result)
     printLine("After: ", v);
 
     const size_t N = refV.size();
     std::cout << "Time to process a range of " << N
-              << " elements with std::vector : " << (t1 - t0) << " us" << std::endl;
+              << " elements with std::vector : " << (t1 - t0) << " us\n";
     std::cout << "Time to process a range of " << N
-              << " elements with std::deque  : " << (t3 - t2) << " us" << std::endl;
+              << " elements with std::deque  : " << (t3 - t2) << " us\n";
 
-    std::cout << "Ops (vector): pairs_cmp=" << mv.pairComparisons
-              << ", sort_cmp=" << mv.pairSortComparisons
-              << ", binsearch_cmp=" << mv.binarySearchComparisons
-              << ", inserts=" << mv.inserts
-              << ", shifts=" << mv.elementMoves
+    // Optional: ops dump
+    std::cout << "Ops (vector) pairCmp=" << ov.pairLocalCompares
+              << " pairSwaps=" << ov.pairLocalSwaps
+              << " mergeCmp=" << ov.pairMergeCompares
+              << " binCmp="   << ov.binarySearchCompares
+              << " inserts="  << ov.inserts
+              << " shifts="   << ov.shifts
               << std::endl;
 
-    std::cout << "Ops (deque) : pairs_cmp=" << md.pairComparisons
-              << ", sort_cmp=" << md.pairSortComparisons
-              << ", binsearch_cmp=" << md.binarySearchComparisons
-              << ", inserts=" << md.inserts
+    std::cout << "Ops (deque)  pairCmp=" << od.pairLocalCompares
+              << " pairSwaps=" << od.pairLocalSwaps
+              << " mergeCmp=" << od.pairMergeCompares
+              << " binCmp="   << od.binarySearchCompares
+              << " inserts="  << od.inserts
               << std::endl;
 
     return 0;

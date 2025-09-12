@@ -1,25 +1,19 @@
 #!/usr/bin/env bash
 # Usage:
 #   bash tests/fuzz.sh [-v] [N] [ITER]
-#     -v     verbose: show detailed metrics
-#     N      number of integers per run (fixed). If omitted, random N per run.
-#     ITER   number of iterations (default 100 or $ITER)
+#     -v     verbose per-run details
+#     N      elements per run (fixed). If omitted, random N per run.
+#     ITER   number of runs (default 100 or $ITER env)
 #
-# Env (used only if N omitted):
+# Env (only used when N omitted):
 #   MIN_N=1 MAX_N=50 MAX_VAL=10000
-#
-# Example:
-#   bash tests/fuzz.sh -v 21 200
-#   bash tests/fuzz.sh 40 500
-#   bash tests/fuzz.sh -v
 
 set -euo pipefail
 
 # ---- colors ----
 RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'
 BLU=$'\033[34m'; MAG=$'\033[35m'; CYN=$'\033[36m'; RST=$'\033[0m'
-# "Orange" (256-color). Fallback to yellow if terminal doesn’t support it.
-ORG=$'\033[38;5;208m'
+ORG=$'\033[38;5;208m'   # orange (256-color)
 
 # ---- args ----
 VERBOSE=0
@@ -30,8 +24,8 @@ while getopts ":v" opt; do
 done
 shift $((OPTIND-1))
 
-FIXED_N="${1:-}"                          # $1 => number of elements
-ITER="${2:-${ITER:-100}}"                 # $2 => iterations
+FIXED_N="${1:-}"
+ITER="${2:-${ITER:-100}}"
 MIN_N="${MIN_N:-1}"
 MAX_N="${MAX_N:-50}"
 MAX_VAL="${MAX_VAL:-10000}"
@@ -40,12 +34,9 @@ cd "$(dirname "$0")/.."
 BIN=./PmergeMe
 [[ -x "$BIN" ]] || { printf "%b\n" "${RED}Binary not found at $BIN${RST}"; exit 1; }
 
-# ---- helpers ----
 rand32() { echo $(( ((RANDOM << 15) | RANDOM) & 0x3fffffff )); }
 
-# Expected maximum operations curve for Ford–Johnson (merge-insertion).
-# Model: ceil(n*log2(n) - 1.3*n + 1), tuned so that n=21 -> ~66.
-# Small-N hand caps to avoid underestimation.
+# Expected max Ford–Johnson ops: ceil(n*log2 n - 1.3n + 1)
 expected_max() {
   local n="$1"
   if (( n <= 1 )); then echo 0; return; fi
@@ -59,13 +50,65 @@ expected_max() {
   awk -v n="$n" '
     function log2(x){ return log(x)/log(2) }
     BEGIN{
-      thr = n*log2(n) - 1.3*n + 1.0;    # main curve
+      thr = n*log2(n) - 1.3*n + 1.0;
       if (thr < 0) thr = 0;
-      # ceil
-      it = int(thr);
-      if (thr > it) it++;
+      it = int(thr); if (thr > it) it++;
       print it;
     }'
+}
+
+# Extract a token KEY=VAL from a single line
+tok() {
+  # $1=line, $2=key
+  awk -v key="$2" '{
+    for (i=1; i<=NF; ++i) {
+      split($i,a,"=");
+      if (a[1]==key) { print a[2]; exit }
+    }
+  }' <<<"$1"
+}
+
+# Parse metrics from program output (new names, with fallback to old)
+parse_metrics() {
+  # $1 = full output
+  local out="$1"
+  VLINE="$(printf '%s\n' "$out" | grep -E '^Ops \(vector\)')"
+  DLINE="$(printf '%s\n' "$out" | grep -E '^Ops \(deque\)')"
+
+  # Try new names first
+  v_pairCmp="$(tok "$VLINE" pairCmp)";      v_pairCmp=${v_pairCmp:-0}
+  v_pairSwp="$(tok "$VLINE" pairSwaps)";    v_pairSwp=${v_pairSwp:-0}
+  v_mergeCmp="$(tok "$VLINE" mergeCmp)";    v_mergeCmp=${v_mergeCmp:-0}
+  v_binCmp="$(tok "$VLINE" binCmp)";        v_binCmp=${v_binCmp:-0}
+  v_inserts="$(tok "$VLINE" inserts)";      v_inserts=${v_inserts:-0}
+  v_shifts="$(tok "$VLINE" shifts)";        v_shifts=${v_shifts:-0}
+
+  d_pairCmp="$(tok "$DLINE" pairCmp)";      d_pairCmp=${d_pairCmp:-0}
+  d_pairSwp="$(tok "$DLINE" pairSwaps)";    d_pairSwp=${d_pairSwp:-0}
+  d_mergeCmp="$(tok "$DLINE" mergeCmp)";    d_mergeCmp=${d_mergeCmp:-0}
+  d_binCmp="$(tok "$DLINE" binCmp)";        d_binCmp=${d_binCmp:-0}
+  d_inserts="$(tok "$DLINE" inserts)";      d_inserts=${d_inserts:-0}
+
+  # Fallback: old names if new ones were all zeros and old format exists
+  if [[ "$VLINE" == "" || ( "$v_pairCmp" == 0 && "$v_pairSwp" == 0 && "$v_mergeCmp" == 0 && "$v_binCmp" == 0 && "$v_inserts" == 0 && "$v_shifts" == 0 ) ]]; then
+    v_pairs_old="$(printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*pairs_cmp=\([0-9]\+\).*/\1/p')"
+    v_sort_old="$( printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*sort_cmp=\([0-9]\+\).*/\1/p')"
+    v_bin_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
+    v_ins_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*inserts=\([0-9]\+\).*/\1/p')"
+    v_shf_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*shifts=\([0-9]\+\).*/\1/p')"
+    v_pairCmp=${v_pairs_old:-0}; v_pairSwp=0; v_mergeCmp=${v_sort_old:-0}; v_binCmp=${v_bin_old:-0}; v_inserts=${v_ins_old:-0}; v_shifts=${v_shf_old:-0}
+  fi
+  if [[ "$DLINE" == "" || ( "$d_pairCmp" == 0 && "$d_pairSwp" == 0 && "$d_mergeCmp" == 0 && "$d_binCmp" == 0 && "$d_inserts" == 0 ) ]]; then
+    d_pairs_old="$(printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*pairs_cmp=\([0-9]\+\).*/\1/p')"
+    d_sort_old="$( printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*sort_cmp=\([0-9]\+\).*/\1/p')"
+    d_bin_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
+    d_ins_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*inserts=\([0-9]\+\).*/\1/p')"
+    d_pairCmp=${d_pairs_old:-0}; d_pairSwp=0; d_mergeCmp=${d_sort_old:-0}; d_binCmp=${d_bin_old:-0}; d_inserts=${d_ins_old:-0}
+  fi
+
+  # Compute totals (OP = comparisons + inserts; we exclude shifts from total)
+  VEC_TOTAL=$(( v_pairCmp + v_pairSwp + v_mergeCmp + v_binCmp + v_inserts ))
+  DEQ_TOTAL=$(( d_pairCmp + d_pairSwp + d_mergeCmp + d_binCmp + d_inserts ))
 }
 
 # ---- stats ----
@@ -86,123 +129,70 @@ for ((i=1; i<=ITER; ++i)); do
     n=$((RANDOM % (MAX_N - MIN_N + 1) + MIN_N))
   fi
 
-  # Generate args: strictly positive ints 1..MAX_VAL
+  # Generate args 1..MAX_VAL
   args=()
   for ((k=0; k<n; ++k)); do
     val=$(( $(rand32) % MAX_VAL + 1 ))
     args+=("$val")
   done
 
-  # Run program; capture stdout+stderr
   out=""
   if ! out="$("$BIN" "${args[@]}" 2>&1)"; then
     status="${RED}[FAIL]${RST}"
     after=""
+    VEC_TOTAL=0; DEQ_TOTAL=0; v_shifts=0
   else
+    # Check sorted
     after="$(printf '%s\n' "$out" | sed -n 's/^After:[[:space:]]*//p' | tr -s ' ' ' ' | sed 's/^ //; s/ $//')"
     expected_sorted="$(printf '%s\n' "${args[@]}" | grep -E '^[0-9]+$' | sort -n | tr '\n' ' ' | sed 's/ $//')"
-    if [[ "$after" == "$expected_sorted" ]]; then
-      status="${GRN}[OK]${RST}"
-    else
-      status="${RED}[FAIL]${RST}"
-    fi
+    if [[ "$after" == "$expected_sorted" ]]; then status="${GRN}[OK]${RST}"; else status="${RED}[FAIL]${RST}"; fi
+    parse_metrics "$out"
   fi
 
-  # Parse metrics
-  vec_pairs="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*pairs_cmp=\([0-9]\+\).*/\1/p')"
-  vec_sort="$(   printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*sort_cmp=\([0-9]\+\).*/\1/p')"
-  vec_bin="$(    printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
-  vec_ins="$(    printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*inserts=\([0-9]\+\).*/\1/p')"
-  vec_shifts="$( printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*shifts=\([0-9]\+\).*/\1/p')"
-
-  deq_pairs="$( printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*pairs_cmp=\([0-9]\+\).*/\1/p')"
-  deq_sort="$(  printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*sort_cmp=\([0-9]\+\).*/\1/p')"
-  deq_bin="$(   printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
-  deq_ins="$(   printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*inserts=\([0-9]\+\).*/\1/p')"
-
-  vec_pairs=${vec_pairs:-0}; vec_sort=${vec_sort:-0}; vec_bin=${vec_bin:-0}; vec_ins=${vec_ins:-0}; vec_shifts=${vec_shifts:-0}
-  deq_pairs=${deq_pairs:-0}; deq_sort=${deq_sort:-0}; deq_bin=${deq_bin:-0}; deq_ins=${deq_ins:-0}
-
-  # Our OP metric (vector total, as agreed)
-  vec_total=$(( vec_pairs + vec_sort + vec_bin + vec_ins ))
-  deq_total=$(( deq_pairs + deq_sort + deq_bin + deq_ins ))
-  OP="$vec_total"
-
+  OP="$VEC_TOTAL"
   cap="$(expected_max "$n")"
-  over_flag=0
-  if (( OP > cap )); then
-    over_flag=1
-  fi
+  over_flag=0; (( OP > cap )) && over_flag=1
 
-  # Compose line for this run
   if [[ "$VERBOSE" == "1" ]]; then
-    # Color OP orange if over cap
-    if (( over_flag == 1 )); then
-      op_str="${ORG}${OP}${RST}"
-      tail="| ${ORG}over cap=${cap}${RST}"
-    else
-      op_str="${YEL}${OP}${RST}"
-      tail="| cap=${cap}"
-    fi
-    line="$(printf "%s N=%d OP=%b | vec total=%d (pairs=%d, sort=%d, bin=%d, ins=%d, shifts=%d) | deq total=%d (pairs=%d, sort=%d, bin=%d, ins=%d) %s" \
+    if (( over_flag )); then op_str="${ORG}${OP}${RST}"; tail="| ${ORG}over cap=${cap}${RST}"; else op_str="${YEL}${OP}${RST}"; tail="| cap=${cap}"; fi
+    line="$(printf "%s N=%d OP=%b | vec total=%d (pairCmp=%d, pairSwaps=%d, mergeCmp=%d, binCmp=%d, inserts=%d, shifts=%d) | deq total=%d (pairCmp=%d, pairSwaps=%d, mergeCmp=%d, binCmp=%d, inserts=%d) %s" \
       "$status" "$n" "$op_str" \
-      "$vec_total" "$vec_pairs" "$vec_sort" "$vec_bin" "$vec_ins" "$vec_shifts" \
-      "$deq_total" "$deq_pairs" "$deq_sort" "$deq_bin" "$deq_ins" \
+      "$VEC_TOTAL" "$v_pairCmp" "$v_pairSwp" "$v_mergeCmp" "$v_binCmp" "$v_inserts" "$v_shifts" \
+      "$DEQ_TOTAL" "$d_pairCmp" "$d_pairSwp" "$d_mergeCmp" "$d_binCmp" "$d_inserts" \
       "$tail")"
   else
-    # Non-verbose: just N and OP (OP orange if over cap)
-    if (( over_flag == 1  )); then
-      op_str="${ORG}${OP}${RST}"
-    else
-      op_str="${YEL}${OP}${RST}"
-    fi
+    if (( over_flag )); then op_str="${ORG}${OP}${RST}"; else op_str="${YEL}${OP}${RST}"; fi
     line="$(printf "%s N=%d OP=%b" "$status" "$n" "$op_str")"
   fi
 
   printf "%b\n" "$line"
 
-  # Update summary stats
   sum_ops=$((sum_ops + OP))
-  (( over_flag == 1 )) && over_cap=$((over_cap + 1))
-  if [[ -z "${best_op:-}" || OP -lt best_op ]]; then
-    best_op=$OP; best_line="$line"
-  fi
-  if [[ -z "${worst_op:-}" || OP -gt worst_op ]]; then
-    worst_op=$OP; worst_line="$line"
-  fi
+  (( over_flag )) && over_cap=$((over_cap + 1))
+  if [[ -z "${best_op:-}" || OP -lt best_op ]]; then best_op=$OP; best_line="$line"; fi
+  if [[ -z "${worst_op:-}" || OP -gt worst_op ]]; then worst_op=$OP; worst_line="$line"; fi
   [[ "$status" == *"[OK]"* ]] && passes=$((passes + 1))
 done
 
 avg_op=$(( sum_ops / ITER ))
 
-# For summary expectations, use fixed N if provided; otherwise approximate with
-# the mean cap across a uniform distribution in [MIN_N..MAX_N].
+# Average cap in summary (use fixed N if provided)
 avg_cap="n/a"
 if [[ -n "$FIXED_N" ]]; then
   avg_cap="$(expected_max "$FIXED_N")"
 else
-  # rough average cap across the range
   total_cap=0
-  for ((n=$MIN_N; n<=$MAX_N; ++n)); do
-    total_cap=$(( total_cap + $(expected_max "$n") ))
-  done
-  range=$(( MAX_N - MIN_N + 1 ))
-  avg_cap=$(( total_cap / range ))
+  for ((n=$MIN_N; n<=$MAX_N; ++n)); do total_cap=$(( total_cap + $(expected_max "$n") )); done
+  avg_cap=$(( total_cap / (MAX_N - MIN_N + 1) ))
 fi
 
-# ---- Summary ----
 printf "%b\n" "${BLU}========== Summary (${ITER} runs) ==========${RST}"
 printf "%b\n" "${GRN}Best${RST}        : $best_line"
 printf "%b\n" "${RED}Worst${RST}       : $worst_line"
 printf "%b\n" "${MAG}Average OP${RST}  : ${CYN}${avg_op}${RST}"
 if [[ "$avg_cap" != "n/a" ]]; then
-  # color avg comparison
-  if [[ "$avg_op" -le "$avg_cap" ]]; then
-    avg_cmp_color="$GRN"
-  else
-    avg_cmp_color="$ORG"
-  fi
-  printf "%b\n" "Expected avg cap : ${avg_cmp_color}${avg_cap}${RST}"
+  if [[ "$avg_op" -le "$avg_cap" ]]; then col="$GRN"; else col="$ORG"; fi
+  printf "%b\n" "Expected avg cap : ${col}${avg_cap}${RST}"
 fi
 if (( over_cap > 0 )); then
   printf "%b\n" "${ORG}Over-cap cases${RST}: ${ORG}${over_cap}${RST}/${ITER}"
