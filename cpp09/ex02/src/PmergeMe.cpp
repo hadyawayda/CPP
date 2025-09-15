@@ -81,7 +81,7 @@ struct LessCounted {
     PmergeMe::Metrics* m;
     LessCounted(PmergeMe::Metrics* mm) : m(mm) {}
     bool operator()(const U& a, const U& b) const {
-        if (m) m->binarySearchComparisons++;
+        if (m) m->binarySearchComparisons++; // count ONE comparator call
         return a < b;
     }
 };
@@ -91,13 +91,13 @@ struct PairByMaxThenMinCounted {
     PmergeMe::Metrics* m;
     PairByMaxThenMinCounted(PmergeMe::Metrics* mm) : m(mm) {}
     bool operator()(const std::pair<U,U>& x, const std::pair<U,U>& y) const {
-        if (m) m->pairSortComparisons++;
+        if (m) m->pairSortComparisons++;     // count ONE comparator call
         if (x.second != y.second) return x.second < y.second;
         return x.first < y.first;
     }
 };
 
-// accountMoves: overloads to add element move counts only for vector
+// elementMoves: count shifts only for vector
 static void accountMoves(std::vector<unsigned int>&, size_t moved, PmergeMe::Metrics* m) {
     if (m) m->elementMoves += moved;
 }
@@ -119,7 +119,7 @@ static size_t binaryInsertLimited(Cont& chain, unsigned int value,
     size_t oldSize = chain.size();
     chain.insert(pos, value);
 
-    if (m) m->inserts++;
+    if (m) m->inserts++;                   // count the insert op
     accountMoves(chain, oldSize - idx, m); // elements shifted right of idx
     return idx;
 }
@@ -141,18 +141,18 @@ static void fordJohnsonSort(Cont& data, PmergeMe::Metrics* m) {
     for (; i + 1 < n; i += 2) {
         U a = data[i];
         U b = data[i+1];
-        if (m) m->pairComparisons++;
+        if (m) m->pairComparisons++;  // one local compare to order the pair
         if (a <= b) pairs.push_back(std::make_pair(a, b));
         else        pairs.push_back(std::make_pair(b, a));
+        // swaps are NOT counted by design
     }
     if (hasStraggler) straggler = data[i];
 
-    // sort pairs by max, then min
+    // sort pairs by max, then min (count comparator calls)
     std::sort(pairs.begin(), pairs.end(), PairByMaxThenMinCounted<U>(m));
 
     // main chain = all maxima, ascending
     Cont chain;
-    // make sure capacity/growth is okay; just insert one-by-one
     chain.insert(chain.end(), pairs[0].second);
     for (size_t k = 1; k < pairs.size(); ++k)
         chain.insert(chain.end(), pairs[k].second);
@@ -180,13 +180,15 @@ static void fordJohnsonSort(Cont& data, PmergeMe::Metrics* m) {
             if (maxPos[j] >= ins) ++maxPos[j];
     }
 
-    // straggler (if any) inserts into full chain
+    // straggler (if any) inserts into full chain (count comparisons & shifts)
     if (hasStraggler) {
         LessCounted<U> comp(m);
         typename Cont::iterator pos = std::lower_bound(chain.begin(), chain.end(), straggler, comp);
+        size_t idx     = static_cast<size_t>(pos - chain.begin());
+        size_t oldSize = chain.size();
         chain.insert(pos, straggler);
-        if (m) m->inserts++;
-        // elementMoves for vector accounted by accountMoves in binaryInsertLimited; here optional
+        if (m) m->inserts++;                 // count the insert op
+        accountMoves(chain, oldSize - idx, m); // count vector shifts (0 for deque)
     }
 
     // write back

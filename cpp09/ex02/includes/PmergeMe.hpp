@@ -9,9 +9,9 @@
 class PmergeMe {
 public:
     struct Metrics {
-        size_t pairComparisons;          // while making (min,max) pairs
-        size_t pairSortComparisons;      // comparisons during sorting of pairs
-        size_t binarySearchComparisons;  // comparisons in lower_bound
+        size_t pairComparisons;          // compares while forming (min,max) pairs
+        size_t pairSortComparisons;      // comparator calls while sorting pairs
+        size_t binarySearchComparisons;  // comparator calls in bounded lower_bound
         size_t inserts;                  // number of insert operations
         size_t elementMoves;             // only meaningful for std::vector
 
