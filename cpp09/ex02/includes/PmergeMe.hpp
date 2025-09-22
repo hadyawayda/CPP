@@ -3,36 +3,89 @@
 
 #include <vector>
 #include <deque>
-#include <string>
-#include <cstddef> // size_t
+#include <utility>  // std::pair
+#include <cstddef>  // size_t
 
 class PmergeMe {
 public:
-    // Canonical Orthodox Form
-    PmergeMe() {}
-    PmergeMe(const PmergeMe&) {}
-    PmergeMe& operator=(const PmergeMe&) { return *this; }
-    ~PmergeMe() {}
+    // Count ONLY: (a) binary-search steps and (b) pair-sorting comparator decisions.
+    static int comparisons;
 
-    struct Ops {
-        size_t pairLocalCompares;   // local compares in (min,max) pairing
-        size_t pairMergeCompares;   // compares during stable sort of pairs by max
-        size_t binarySearchCompares;// compares in bounded lower_bound
-        size_t pairLocalSwaps;      // kept for display; do NOT increment
-        size_t inserts;             // kept for display; do NOT increment
-        size_t shifts;              // informational only (vector shifts)
+    // ---------- Jacobsthal helpers ----------
+    static std::size_t jacobsthal(std::size_t n);
+    // Returns indices 1..m-1 in Ford–Johnson order (descending Jacobsthal blocks)
+    static std::vector<std::size_t> buildJacobInsertionOrder(std::size_t m);
 
-        Ops() : pairLocalCompares(0), pairMergeCompares(0),
-                binarySearchCompares(0), pairLocalSwaps(0),
-                inserts(0), shifts(0) {}
-    };
+    // ---------- Binary search (first idx in [lo, hi_excl) where c[idx] >= val) ----------
+    static std::size_t lowerBoundIndex(const std::vector<unsigned int>& c,
+                                       std::size_t lo, std::size_t hi_excl,
+                                       unsigned int val);
 
-    static bool parseArgs(int argc, char** argv,
-                          std::vector<unsigned int>& outVec,
-                          std::deque<unsigned int>&  outDeq);
+    static std::size_t lowerBoundIndex(const std::deque<unsigned int>& c,
+                                       std::size_t lo, std::size_t hi_excl,
+                                       unsigned int val);
 
-    static void sortVector(std::vector<unsigned int>& v, Ops* ops = 0);
-    static void sortDeque (std::deque <unsigned int>& d, Ops* ops = 0);
+    // Convenience: partner-capped lower_bound (search [0 .. partner_pos], inclusive)
+    static std::size_t lowerBoundPartnerCap(const std::vector<unsigned int>& c,
+                                            std::size_t partner_pos,
+                                            unsigned int val);
+
+    static std::size_t lowerBoundPartnerCap(const std::deque<unsigned int>& c,
+                                            std::size_t partner_pos,
+                                            unsigned int val);
+
+    // ---------- Pair type and explicit, stable pair sort by (max, then min) ----------
+    typedef std::pair<unsigned int, unsigned int> Pair; // (min, max)
+
+    // Stable insertion sort of pairs by (max ascending, then min ascending).
+    // Counts ONE comparison per ordering decision.
+    static void sortPairsByMax(std::vector<Pair>& pairs);
+
+    // ---------- Orchestration helpers (vector) ----------
+    static void splitIntoPairs(const std::vector<unsigned int>& src,
+                               std::vector<Pair>& outPairs,
+                               bool& hasStraggler, unsigned int& straggler);
+
+    static void buildChainsFromPairs(const std::vector<Pair>& pairs,
+                                     std::vector<unsigned int>& chain,
+                                     std::vector<unsigned int>& pending,
+                                     std::vector<std::size_t>& maxPos);
+
+    static void insertFirstPending(std::vector<unsigned int>& chain,
+                                   const std::vector<unsigned int>& pending,
+                                   std::vector<std::size_t>& maxPos);
+
+    static void insertPendingByJacob(std::vector<unsigned int>& chain,
+                                     const std::vector<unsigned int>& pending,
+                                     std::vector<std::size_t>& maxPos);
+
+    static void insertStraggler(std::vector<unsigned int>& chain,
+                                bool hasStraggler, unsigned int straggler);
+
+    // ---------- Orchestration helpers (deque) ----------
+    static void splitIntoPairs(const std::deque<unsigned int>& src,
+                               std::vector<Pair>& outPairs,
+                               bool& hasStraggler, unsigned int& straggler);
+
+    static void buildChainsFromPairs(const std::vector<Pair>& pairs,
+                                     std::deque<unsigned int>& chain,
+                                     std::vector<unsigned int>& pending,
+                                     std::vector<std::size_t>& maxPos);
+
+    static void insertFirstPending(std::deque<unsigned int>& chain,
+                                   const std::vector<unsigned int>& pending,
+                                   std::vector<std::size_t>& maxPos);
+
+    static void insertPendingByJacob(std::deque<unsigned int>& chain,
+                                     const std::vector<unsigned int>& pending,
+                                     std::vector<std::size_t>& maxPos);
+
+    static void insertStraggler(std::deque<unsigned int>& chain,
+                                bool hasStraggler, unsigned int straggler);
+
+    // ---------- Public wrappers ----------
+    static void fordJohnsonSort(std::vector<unsigned int>& v);
+    static void fordJohnsonSort(std::deque<unsigned int>& d);
 };
 
-#endif
+#endif // PMERGEME_HPP

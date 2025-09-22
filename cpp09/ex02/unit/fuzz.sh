@@ -13,7 +13,7 @@ set -euo pipefail
 # ---- colors ----
 RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'
 BLU=$'\033[34m'; MAG=$'\033[35m'; CYN=$'\033[36m'; RST=$'\033[0m'
-ORG=$'\033[38;5;208m'   # orange (256-color)
+ORG=$'\033[38;5;208m'
 
 # ---- args ----
 VERBOSE=0
@@ -36,7 +36,7 @@ BIN=./PmergeMe
 
 rand32() { echo $(( ((RANDOM << 15) | RANDOM) & 0x3fffffff )); }
 
-# Expected max Ford–Johnson ops: ceil(n*log2 n - 1.3n + 1)
+# Expected max Ford–Johnson comparisons ~ ceil(n*log2 n - 1.3n + 1)
 expected_max() {
   local n="$1"
   if (( n <= 1 )); then echo 0; return; fi
@@ -57,58 +57,38 @@ expected_max() {
     }'
 }
 
-# Extract a token KEY=VAL from a single line
-tok() {
-  # $1=line, $2=key
-  awk -v key="$2" '{
-    for (i=1; i<=NF; ++i) {
-      split($i,a,"=");
-      if (a[1]==key) { print a[2]; exit }
-    }
-  }' <<<"$1"
+# Get "After:" line (single line of numbers)
+parse_after_line() {
+  printf '%s\n' "$1" | sed -n 's/^After:[[:space:]]*//p' | tr -s ' ' ' ' | sed 's/^ //; s/ $//'
 }
 
-# Parse metrics from program output (new names, with fallback to old)
-parse_metrics() {
+# Parse comparison counts from current main output
+parse_comparisons() {
   # $1 = full output
   local out="$1"
-  VLINE="$(printf '%s\n' "$out" | grep -E '^Ops \(vector\)')"
-  DLINE="$(printf '%s\n' "$out" | grep -E '^Ops \(deque\)')"
+  # Sed grabs the first integer after the label, portable BRE (no warnings)
+  vec_cmp="$(printf '%s\n' "$out" | sed -n 's/^Comparisons (vector):[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -n1)"
+  deq_cmp="$(printf '%s\n' "$out" | sed -n 's/^Comparisons (deque):[[:space:]]*\([0-9][0-9]*\).*/\1/p'  | tail -n1)"
+  vec_cmp=${vec_cmp:-0}
+  deq_cmp=${deq_cmp:-0}
 
-  # Try new names first
-  v_pairCmp="$(tok "$VLINE" pairCmp)";      v_pairCmp=${v_pairCmp:-0}
-  v_pairSwp="$(tok "$VLINE" pairSwaps)";    v_pairSwp=${v_pairSwp:-0}
-  v_mergeCmp="$(tok "$VLINE" mergeCmp)";    v_mergeCmp=${v_mergeCmp:-0}
-  v_binCmp="$(tok "$VLINE" binCmp)";        v_binCmp=${v_binCmp:-0}
-  v_inserts="$(tok "$VLINE" inserts)";      v_inserts=${v_inserts:-0}
-  v_shifts="$(tok "$VLINE" shifts)";        v_shifts=${v_shifts:-0}
-
-  d_pairCmp="$(tok "$DLINE" pairCmp)";      d_pairCmp=${d_pairCmp:-0}
-  d_pairSwp="$(tok "$DLINE" pairSwaps)";    d_pairSwp=${d_pairSwp:-0}
-  d_mergeCmp="$(tok "$DLINE" mergeCmp)";    d_mergeCmp=${d_mergeCmp:-0}
-  d_binCmp="$(tok "$DLINE" binCmp)";        d_binCmp=${d_binCmp:-0}
-  d_inserts="$(tok "$DLINE" inserts)";      d_inserts=${d_inserts:-0}
-
-  # Fallback: old names if new ones were all zeros and old format exists
-  if [[ "$VLINE" == "" || ( "$v_pairCmp" == 0 && "$v_pairSwp" == 0 && "$v_mergeCmp" == 0 && "$v_binCmp" == 0 && "$v_inserts" == 0 && "$v_shifts" == 0 ) ]]; then
-    v_pairs_old="$(printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*pairs_cmp=\([0-9]\+\).*/\1/p')"
-    v_sort_old="$( printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*sort_cmp=\([0-9]\+\).*/\1/p')"
-    v_bin_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
-    v_ins_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*inserts=\([0-9]\+\).*/\1/p')"
-    v_shf_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*shifts=\([0-9]\+\).*/\1/p')"
-    v_pairCmp=${v_pairs_old:-0}; v_pairSwp=0; v_mergeCmp=${v_sort_old:-0}; v_binCmp=${v_bin_old:-0}; v_inserts=${v_ins_old:-0}; v_shifts=${v_shf_old:-0}
+  # Backward-compat: older format "Ops (vector): ... binsearch_cmp=... sort_cmp=..."
+  if [[ "$vec_cmp" -eq 0 ]]; then
+    local old_bin old_sort
+    old_bin="$( printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*binsearch_cmp=\([0-9][0-9]*\).*/\1/p' )"
+    old_sort="$(printf '%s\n' "$out" | sed -n 's/^Ops (vector):.*sort_cmp=\([0-9][0-9]*\).*/\1/p' )"
+    if [[ -n "$old_bin$old_sort" ]]; then
+      vec_cmp=$(( ${old_bin:-0} + ${old_sort:-0} ))
+    fi
   fi
-  if [[ "$DLINE" == "" || ( "$d_pairCmp" == 0 && "$d_pairSwp" == 0 && "$d_mergeCmp" == 0 && "$d_binCmp" == 0 && "$d_inserts" == 0 ) ]]; then
-    d_pairs_old="$(printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*pairs_cmp=\([0-9]\+\).*/\1/p')"
-    d_sort_old="$( printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*sort_cmp=\([0-9]\+\).*/\1/p')"
-    d_bin_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*binsearch_cmp=\([0-9]\+\).*/\1/p')"
-    d_ins_old="$(  printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*inserts=\([0-9]\+\).*/\1/p')"
-    d_pairCmp=${d_pairs_old:-0}; d_pairSwp=0; d_mergeCmp=${d_sort_old:-0}; d_binCmp=${d_bin_old:-0}; d_inserts=${d_ins_old:-0}
+  if [[ "$deq_cmp" -eq 0 ]]; then
+    local old_bin_d old_sort_d
+    old_bin_d="$( printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*binsearch_cmp=\([0-9][0-9]*\).*/\1/p' )"
+    old_sort_d="$(printf '%s\n' "$out" | sed -n 's/^Ops (deque) :.*sort_cmp=\([0-9][0-9]*\).*/\1/p' )"
+    if [[ -n "$old_bin_d$old_sort_d" ]]; then
+      deq_cmp=$(( ${old_bin_d:-0} + ${old_sort_d:-0} ))
+    fi
   fi
-
-  # Compute totals (OP = comparisons + inserts; we exclude shifts from total)
-  VEC_TOTAL=$(( v_pairCmp + v_pairSwp + v_mergeCmp + v_binCmp + v_inserts ))
-  DEQ_TOTAL=$(( d_pairCmp + d_pairSwp + d_mergeCmp + d_binCmp + d_inserts ))
 }
 
 # ---- stats ----
@@ -129,7 +109,7 @@ for ((i=1; i<=ITER; ++i)); do
     n=$((RANDOM % (MAX_N - MIN_N + 1) + MIN_N))
   fi
 
-  # Generate args 1..MAX_VAL
+  # Generate args in [1..MAX_VAL]
   args=()
   for ((k=0; k<n; ++k)); do
     val=$(( $(rand32) % MAX_VAL + 1 ))
@@ -140,25 +120,24 @@ for ((i=1; i<=ITER; ++i)); do
   if ! out="$("$BIN" "${args[@]}" 2>&1)"; then
     status="${RED}[FAIL]${RST}"
     after=""
-    VEC_TOTAL=0; DEQ_TOTAL=0; v_shifts=0
+    vec_cmp=0
+    deq_cmp=0
   else
-    # Check sorted
-    after="$(printf '%s\n' "$out" | sed -n 's/^After:[[:space:]]*//p' | tr -s ' ' ' ' | sed 's/^ //; s/ $//')"
+    after="$(parse_after_line "$out")"
     expected_sorted="$(printf '%s\n' "${args[@]}" | grep -E '^[0-9]+$' | sort -n | tr '\n' ' ' | sed 's/ $//')"
     if [[ "$after" == "$expected_sorted" ]]; then status="${GRN}[OK]${RST}"; else status="${RED}[FAIL]${RST}"; fi
-    parse_metrics "$out"
+    parse_comparisons "$out"
   fi
 
-  OP="$VEC_TOTAL"
+  OP="$vec_cmp"            # score by vector comparisons
   cap="$(expected_max "$n")"
   over_flag=0; (( OP > cap )) && over_flag=1
 
   if [[ "$VERBOSE" == "1" ]]; then
     if (( over_flag )); then op_str="${ORG}${OP}${RST}"; tail="| ${ORG}over cap=${cap}${RST}"; else op_str="${YEL}${OP}${RST}"; tail="| cap=${cap}"; fi
-    line="$(printf "%s N=%d OP=%b | vec total=%d (pairCmp=%d, pairSwaps=%d, mergeCmp=%d, binCmp=%d, inserts=%d, shifts=%d) | deq total=%d (pairCmp=%d, pairSwaps=%d, mergeCmp=%d, binCmp=%d, inserts=%d) %s" \
+    line="$(printf "%s N=%d OP=%b | vec cmp=%d | deq cmp=%d %s" \
       "$status" "$n" "$op_str" \
-      "$VEC_TOTAL" "$v_pairCmp" "$v_pairSwp" "$v_mergeCmp" "$v_binCmp" "$v_inserts" "$v_shifts" \
-      "$DEQ_TOTAL" "$d_pairCmp" "$d_pairSwp" "$d_mergeCmp" "$d_binCmp" "$d_inserts" \
+      "$vec_cmp" "$deq_cmp" \
       "$tail")"
   else
     if (( over_flag )); then op_str="${ORG}${OP}${RST}"; else op_str="${YEL}${OP}${RST}"; fi
