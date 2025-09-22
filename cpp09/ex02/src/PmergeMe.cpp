@@ -1,4 +1,7 @@
 #include "PmergeMe.hpp"
+#include <vector>
+#include <deque>
+#include <map>
 
 // Single class-scoped counter definition
 int PmergeMe::comparisons = 0;
@@ -68,57 +71,6 @@ std::size_t PmergeMe::lowerBoundIndex(const std::deque<unsigned int>& c,
     return lo; // first index with c[idx] >= val
 }
 
-std::size_t PmergeMe::lowerBoundPartnerCap(const std::vector<unsigned int>& c,
-                                           std::size_t partner_pos,
-                                           unsigned int val)
-{
-    std::size_t hi_excl = partner_pos + 1u;
-    if (hi_excl > c.size()) hi_excl = c.size();
-    return lowerBoundIndex(c, 0u, hi_excl, val);
-}
-
-std::size_t PmergeMe::lowerBoundPartnerCap(const std::deque<unsigned int>& c,
-                                           std::size_t partner_pos,
-                                           unsigned int val)
-{
-    std::size_t hi_excl = partner_pos + 1u;
-    if (hi_excl > c.size()) hi_excl = c.size();
-    return lowerBoundIndex(c, 0u, hi_excl, val);
-}
-
-// ====================== stable pair sort by (max, then min) ======================
-// File-local helper: return true if L should come AFTER R (i.e., L > R by key).
-// ONE counted comparison per ordering decision.
-static bool pairGreaterByMaxThenMin(const PmergeMe::Pair& L,
-                                    const PmergeMe::Pair& R)
-{
-    ++PmergeMe::comparisons; // count once per decision
-    if (L.second != R.second) return (L.second > R.second);
-    return (L.first > R.first);
-}
-
-// Stable insertion sort by (max asc, then min asc).
-void PmergeMe::sortPairsByMax(std::vector<Pair>& pairs)
-{
-    if (pairs.size() <= 1u) return;
-
-    for (std::size_t i = 1u; i < pairs.size(); ++i) {
-        Pair key = pairs[i];
-        std::size_t j = i;
-
-        while (j > 0u) {
-            // If pairs[j-1] > key by (max, then min), shift right
-            if (pairGreaterByMaxThenMin(pairs[j - 1u], key)) {
-                pairs[j] = pairs[j - 1u];
-                --j;
-            } else {
-                break;
-            }
-        }
-        if (j != i) pairs[j] = key;
-    }
-}
-
 // ====================== Orchestration: vector ======================
 void PmergeMe::splitIntoPairs(const std::vector<unsigned int>& src,
                               std::vector<Pair>& outPairs,
@@ -141,37 +93,12 @@ void PmergeMe::splitIntoPairs(const std::vector<unsigned int>& src,
     }
 }
 
-void PmergeMe::buildChainsFromPairs(const std::vector<Pair>& pairs,
-                                    std::vector<unsigned int>& chain,
-                                    std::vector<unsigned int>& pending,
-                                    std::vector<std::size_t>& maxPos)
-{
-    chain.clear();
-    pending.clear();
-    maxPos.clear();
-
-    const std::size_t k = pairs.size();
-    if (k == 0u) return;
-
-    chain.reserve(k + 1u);     // +1 for the first pending we will insert at front
-    pending.reserve(k);
-    maxPos.reserve(k);
-
-    // Maxima (winners) into 'chain' in the order of sorted pairs
-    for (std::size_t i = 0u; i < k; ++i) chain.push_back(pairs[i].second);
-    // Minima (losers) aligned to the same order
-    for (std::size_t i = 0u; i < k; ++i) pending.push_back(pairs[i].first);
-    // Partner positions (each pair's max is at index i initially)
-    for (std::size_t i = 0u; i < k; ++i) maxPos.push_back(i);
-}
-
 void PmergeMe::insertFirstPending(std::vector<unsigned int>& chain,
                                   const std::vector<unsigned int>& pending,
                                   std::vector<std::size_t>& maxPos)
 {
     if (pending.empty()) return;
     chain.insert(chain.begin(), pending[0]);
-    // shift all partner positions right by 1
     for (std::size_t i = 0u; i < maxPos.size(); ++i) maxPos[i] += 1u;
 }
 
@@ -184,14 +111,13 @@ void PmergeMe::insertPendingByJacob(std::vector<unsigned int>& chain,
 
     const std::vector<std::size_t> order = buildJacobInsertionOrder(m);
     for (std::size_t t = 0u; t < order.size(); ++t) {
-        const std::size_t idx = order[t];           // 1..m-1
+        const std::size_t idx = order[t];              // 1..m-1
         const unsigned int val = pending[idx];
-        const std::size_t hi_excl = maxPos[idx] + 1u;   // partner-capped range
+        const std::size_t hi_excl = maxPos[idx] + 1u;  // partner-capped range
 
         std::size_t pos = lowerBoundIndex(chain, 0u, hi_excl, val);
         chain.insert(chain.begin() + pos, val);
 
-        // bump every partner position at/after insertion point
         for (std::size_t j = 0u; j < maxPos.size(); ++j)
             if (maxPos[j] >= pos) maxPos[j] += 1u;
     }
@@ -221,30 +147,9 @@ void PmergeMe::splitIntoPairs(const std::deque<unsigned int>& src,
     for (std::size_t i = 0u; i + 1u < n; i += 2u) {
         unsigned int a = src[i];
         unsigned int b = src[i + 1u];
-        // Do NOT count this local pair comparison per spec.
         if (a > b) { unsigned int t = a; a = b; b = t; }
-        outPairs.push_back(Pair(a, b)); // (min, max)
+        outPairs.push_back(Pair(a, b));
     }
-}
-
-void PmergeMe::buildChainsFromPairs(const std::vector<Pair>& pairs,
-                                    std::deque<unsigned int>& chain,
-                                    std::vector<unsigned int>& pending,
-                                    std::vector<std::size_t>& maxPos)
-{
-    chain.clear();
-    pending.clear();
-    maxPos.clear();
-
-    const std::size_t k = pairs.size();
-    if (k == 0u) return;
-
-    // Maxima (winners) into 'chain'
-    for (std::size_t i = 0u; i < k; ++i) chain.push_back(pairs[i].second);
-    // Minima (losers) aligned to same order
-    for (std::size_t i = 0u; i < k; ++i) pending.push_back(pairs[i].first);
-    // Partner positions
-    for (std::size_t i = 0u; i < k; ++i) maxPos.push_back(i);
 }
 
 void PmergeMe::insertFirstPending(std::deque<unsigned int>& chain,
@@ -265,7 +170,7 @@ void PmergeMe::insertPendingByJacob(std::deque<unsigned int>& chain,
 
     const std::vector<std::size_t> order = buildJacobInsertionOrder(m);
     for (std::size_t t = 0u; t < order.size(); ++t) {
-        const std::size_t idx = order[t];            // 1..m-1
+        const std::size_t idx = order[t];             // 1..m-1
         const unsigned int val = pending[idx];
         const std::size_t hi_excl = maxPos[idx] + 1u;
 
@@ -285,39 +190,90 @@ void PmergeMe::insertStraggler(std::deque<unsigned int>& chain,
     chain.insert(chain.begin() + pos, straggler);
 }
 
-// ====================== Public wrappers ======================
+// ====================== Duplicate-safe reordering helpers (file-local) ======================
+static void orderPairsByWinners(const std::vector<PmergeMe::Pair>& pairs,
+                                const std::vector<unsigned int>& winnersSorted,
+                                std::vector<unsigned int>& chain,
+                                std::vector<unsigned int>& pending,
+                                std::vector<std::size_t>& partnerPos)
+{
+    chain.clear(); pending.clear(); partnerPos.clear();
+    const std::size_t k = pairs.size(); if (k == 0u) return;
+
+    // value -> stable list of original pair indices
+    std::map<unsigned int, std::vector<std::size_t> > bucket;
+    for (std::size_t i = 0u; i < k; ++i)
+        bucket[pairs[i].second].push_back(i);
+
+    chain.reserve(k + 1u);
+    pending.reserve(k);
+    partnerPos.reserve(k);
+
+    for (std::size_t i = 0u; i < winnersSorted.size(); ++i) {
+        unsigned int w = winnersSorted[i];
+        std::vector<std::size_t>& list = bucket[w];
+        std::size_t idx = list.front(); list.erase(list.begin());
+        chain.push_back(pairs[idx].second);   // winner
+        pending.push_back(pairs[idx].first);  // aligned loser
+        partnerPos.push_back(i);              // current position of winner
+    }
+}
+
+static void orderPairsByWinners(const std::vector<PmergeMe::Pair>& pairs,
+                                const std::vector<unsigned int>& winnersSorted,
+                                std::deque<unsigned int>& chain,
+                                std::vector<unsigned int>& pending,
+                                std::vector<std::size_t>& partnerPos)
+{
+    chain.clear(); pending.clear(); partnerPos.clear();
+    const std::size_t k = pairs.size(); if (k == 0u) return;
+
+    std::map<unsigned int, std::vector<std::size_t> > bucket;
+    for (std::size_t i = 0u; i < k; ++i)
+        bucket[pairs[i].second].push_back(i);
+
+    for (std::size_t i = 0u; i < winnersSorted.size(); ++i) {
+        unsigned int w = winnersSorted[i];
+        std::vector<std::size_t>& list = bucket[w];
+        std::size_t idx = list.front(); list.erase(list.begin());
+        chain.push_back(pairs[idx].second);
+        pending.push_back(pairs[idx].first);
+        partnerPos.push_back(i);
+    }
+}
+
+// ====================== Public wrappers (recursive winners) ======================
 void PmergeMe::fordJohnsonSort(std::vector<unsigned int>& v)
 {
     const std::size_t n = v.size();
     if (n <= 1u) return;
 
-    // 1) Pair and straggler
+    // 1) Pair & straggler
     std::vector<Pair> pairs;
     bool hasStraggler = false;
     unsigned int straggler = 0u;
     splitIntoPairs(v, pairs, hasStraggler, straggler);
+    if (pairs.empty()) return;
 
-    if (pairs.empty()) {
-        // Only straggler exists → already "sorted"
-        return;
-    }
+    // 2) Recursively sort winners (maxima) with Ford–Johnson
+    std::vector<unsigned int> winners;
+    winners.reserve(pairs.size());
+    for (std::size_t i = 0u; i < pairs.size(); ++i)
+        winners.push_back(pairs[i].second);
+    fordJohnsonSort(winners); // recursion
 
-    // 2) Stable sort pairs by (max, then min) — counts comparisons
-    sortPairsByMax(pairs);
+    // 3) Rebuild chain/pending/partnerPos in winners' sorted order (duplicate-safe)
+    std::vector<unsigned int> chain, pending;
+    std::vector<std::size_t>  partnerPos;
+    orderPairsByWinners(pairs, winners, chain, pending, partnerPos);
 
-    // 3) Build main chain (maxima) + pending (minima) and partner positions
-    std::vector<unsigned int> chain;
-    std::vector<unsigned int> pending;
-    std::vector<std::size_t>  maxPos;
-    buildChainsFromPairs(pairs, chain, pending, maxPos);
+    // 4) Insert first pending at front (no comparisons)
+    insertFirstPending(chain, pending, partnerPos);
 
-    // 4) Insert first pending at front (no comparison)
-    insertFirstPending(chain, pending, maxPos);
+    // 5) Insert the rest via Jacobsthal order
+    insertPendingByJacob(chain, pending, partnerPos);
 
-    // 5) Insert remaining minima in Jacobsthal order (bounded binary searches)
-    insertPendingByJacob(chain, pending, maxPos);
-
-    // 6) Insert straggler (if any) via full-range lower_bound
+    // 6) Straggler (if any)
     insertStraggler(chain, hasStraggler, straggler);
 
     // 7) Copy back
@@ -329,32 +285,33 @@ void PmergeMe::fordJohnsonSort(std::deque<unsigned int>& d)
     const std::size_t n = d.size();
     if (n <= 1u) return;
 
-    // 1) Pair and straggler
+    // 1) Pair & straggler
     std::vector<Pair> pairs;
     bool hasStraggler = false;
     unsigned int straggler = 0u;
     splitIntoPairs(d, pairs, hasStraggler, straggler);
+    if (pairs.empty()) return;
 
-    if (pairs.empty()) {
-        return;
-    }
+    // 2) Recursively sort winners (maxima)
+    std::vector<unsigned int> winners;
+    winners.reserve(pairs.size());
+    for (std::size_t i = 0u; i < pairs.size(); ++i)
+        winners.push_back(pairs[i].second);
+    fordJohnsonSort(winners);
 
-    // 2) Stable sort pairs by (max, then min) — counts comparisons
-    sortPairsByMax(pairs);
+    // 3) Rebuild chain/pending/partnerPos in winners' sorted order
+    std::deque<unsigned int>   chain;
+    std::vector<unsigned int>  pending;
+    std::vector<std::size_t>   partnerPos;
+    orderPairsByWinners(pairs, winners, chain, pending, partnerPos);
 
-    // 3) Build main chain (maxima) + pending (minima) and partner positions
-    std::deque<unsigned int>     chain;
-    std::vector<unsigned int>    pending;
-    std::vector<std::size_t>     maxPos;
-    buildChainsFromPairs(pairs, chain, pending, maxPos);
+    // 4) First loser at front (no comparisons)
+    insertFirstPending(chain, pending, partnerPos);
 
-    // 4) First pending at front (no comparison)
-    insertFirstPending(chain, pending, maxPos);
+    // 5) Remaining losers via Jacobsthal order
+    insertPendingByJacob(chain, pending, partnerPos);
 
-    // 5) Insert others by Jacobsthal order with partner-capped binary searches
-    insertPendingByJacob(chain, pending, maxPos);
-
-    // 6) Straggler, if any
+    // 6) Straggler
     insertStraggler(chain, hasStraggler, straggler);
 
     // 7) Copy back
