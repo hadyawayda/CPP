@@ -116,6 +116,8 @@ for ((i=1; i<=ITER; ++i)); do
     args+=("$val")
   done
 
+  # echo "Run #$i: N=$n, args=(${args[*]})"
+
   out=""
   if ! out="$("$BIN" "${args[@]}" 2>&1)"; then
     status="${RED}[FAIL]${RST}"
