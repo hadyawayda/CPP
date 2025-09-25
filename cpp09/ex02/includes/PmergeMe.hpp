@@ -3,50 +3,34 @@
 
 #include <vector>
 #include <deque>
-#include <utility>
-#include <cstddef>
+#include <string>
+#include <stdexcept>
 
-/**
- * Ford–Johnson (merge-insertion) sorter with comparison counting.
- * Public entry points handle std::vector and std::deque of unsigned int.
- */
 class PmergeMe {
 public:
-    /** Default constructor (orthodox canonical form). */
     PmergeMe();
-    /** Copy constructor (orthodox canonical form). */
     PmergeMe(const PmergeMe& other);
-    /** Copy assignment (orthodox canonical form). */
     PmergeMe& operator=(const PmergeMe& other);
-    /** Destructor (orthodox canonical form). */
     ~PmergeMe();
 
-    /**
-     * Returns J(n), the n-th Jacobsthal number.
-     * Param: n – index
-     * Return: J(n)
-     */
-    static std::size_t jacobsthal(std::size_t n);
+    /** Validates argv: positive integers, unique, at least two. */
+    static void validateArgs(char **av);
 
-    /**
-     * Sorts the container in ascending order using Ford–Johnson.
-     * Param: v – vector of unsigned int (modified in place)
-     * Side effects: increments PmergeMe::comparisons
-     */
-    static void fordJohnsonSort(std::vector<unsigned int>& v);
+    /** Sorts in place using Ford–Johnson (vector). */
+    void fordJohnsonVect(std::vector<unsigned int>& data);
 
-    /**
-     * Sorts the container in ascending order using Ford–Johnson.
-     * Param: d – deque of unsigned int (modified in place)
-     * Side effects: increments PmergeMe::comparisons
-     */
-    static void fordJohnsonSort(std::deque<unsigned int>& d);
+    /** Sorts in place using Ford–Johnson (deque). */
+    void fordJohnsonDeq(std::deque<unsigned int>& data);
 
-    /** Global comparison counter incremented by the algorithm. */
-    static int comparisons;
+    /** Comparison count from last vector run. */
+    int vectorComparisons() const;
 
-    /** Pair type for (min, max) produced in the pairing phase. */
-    typedef std::pair<unsigned int, unsigned int> Pair;
+    /** Comparison count from last deque run. */
+    int dequeComparisons() const;
+
+private:
+    int _cmpVec;
+    int _cmpDeq;
 };
 
-#endif // PMERGEME_HPP
+#endif
