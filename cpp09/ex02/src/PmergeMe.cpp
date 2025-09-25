@@ -2,6 +2,7 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <set>
 #include <utility>
 #include <cstddef>
 
@@ -29,23 +30,59 @@ static std::size_t jacobsthal_local(std::size_t n) {
 }
 
 /**
- * Builds the Jacobsthal insertion order for indices 1..m-1 in descending blocks.
+ * Generates Jacobsthal numbers up to a limit (similar to oiskanda's approach).
+ * Param: limit – maximum value
+ * Return: vector of Jacobsthal numbers
+ */
+static std::vector<std::size_t> generateJacobsthalSequence(std::size_t limit) {
+    std::vector<std::size_t> jacobSeq;
+    std::size_t index = 3; // Start from J(3) = 5
+    std::size_t a = 0u, b = 1u, c = 1u; // J(0)=0, J(1)=1, J(2)=1
+    
+    // Generate J(3), J(4), J(5), ...
+    while (true) {
+        c = b + 2u * a;
+        if (c > limit) break;
+        jacobSeq.push_back(c);
+        a = b; b = c;
+        index++;
+    }
+    return jacobSeq;
+}
+
+/**
+ * Builds insertion order from Jacobsthal sequence (inspired by oiskanda's genInsertionOrder).
  * Param: m – number of pending elements
  * Return: order vector of indices in which to insert pending[1..m-1]
  */
 static std::vector<std::size_t> buildJacobInsertionOrder_local(std::size_t m) {
     std::vector<std::size_t> order;
     if (m <= 1u) return order;
-    const std::size_t last = m - 1u;
-    std::size_t prevStart = 1u;
-    std::size_t a = 0u, b = 1u;
-    for (;;) {
-        std::size_t J = b + 2u * a; a = b; b = J;
-        if (J > last) J = last;
-        for (std::size_t i = J + 1u; i-- > prevStart; ) order.push_back(i);
-        if (J == last) break;
-        prevStart = J + 1u;
+    
+    std::vector<std::size_t> jacobSeq = generateJacobsthalSequence(m);
+    std::vector<bool> used(m + 1, false);
+    
+    // Process each Jacobsthal number in descending order within its range
+    for (std::size_t i = 0; i < jacobSeq.size(); ++i) {
+        std::size_t jacobVal = jacobSeq[i];
+        // Add indices from jacobVal down to the previous range
+        std::size_t start = (i == 0) ? 2u : jacobSeq[i-1] + 1u;
+        
+        for (std::size_t idx = jacobVal; idx >= start && idx >= 1u; --idx) {
+            if (idx <= m && !used[idx]) {
+                order.push_back(idx - 1u); // Convert to 0-based indexing
+                used[idx] = true;
+            }
+        }
     }
+    
+    // Add any remaining indices
+    for (std::size_t idx = 1u; idx < m; ++idx) {
+        if (!used[idx + 1u]) {
+            order.push_back(idx);
+        }
+    }
+    
     return order;
 }
 
@@ -71,32 +108,64 @@ static std::size_t lowerBoundIndexT(const RACont& c,
     return lo;
 }
 
+
+
+
+
 /**
- * Binary search capped to [0, cap_excl) with inclusive high; counts decisions.
- * Params: c – chain, cap_excl – exclusive upper bound, val – value
- * Return: insertion index in [0, cap_excl]
+ * Calculates optimized search boundary using msarkis-inspired approach.
+ * Implements progressive expansion for minimal comparisons.
+ * Params: chainSize, currentIndex, totalPending
+ * Return: search boundary limit
+ */
+static std::size_t calculateSearchBoundary(std::size_t chainSize, 
+                                         std::size_t currentIndex, 
+                                         std::size_t /* totalPending */)
+{
+    // msarkis approach: use progressive boundaries
+    static std::size_t lastBoundary = 1;
+    
+    if (currentIndex == 0) {
+        lastBoundary = 1;  // Reset for new sequence
+    } else {
+        lastBoundary = 2 * lastBoundary + 1;  // msarkis's expansion: high = 2*high+1
+    }
+    
+    return std::min(lastBoundary, chainSize);
+}
+
+/**
+ * Performs optimized binary search with computed boundaries.
+ * Integrates msarkis-style optimizations for minimal comparisons.
+ * Params: container, searchLimit, targetValue
+ * Return: insertion position
  * Side effects: increments PmergeMe::comparisons
  */
 template<typename RACont>
-static std::size_t cappedLowerBoundT(const RACont& c,
-                                     std::size_t cap_excl,
-                                     unsigned int val)
+static std::size_t performBoundedSearch(const RACont& container,
+                                       std::size_t searchLimit,
+                                       unsigned int targetValue)
 {
-    if (cap_excl == 0u) return 0u;
-    std::size_t low = 0u, high = cap_excl - 1u;
-    while (low <= high) {
-        std::size_t mid = (low + high) / 2u;
+    if (container.empty() || searchLimit == 0) return 0;
+    
+    std::size_t left = 0;
+    std::size_t right = std::min(searchLimit, container.size());
+    
+    while (left < right) {
+        std::size_t middle = left + (right - left) / 2;
         ++PmergeMe::comparisons;
-        if (c[mid] == val) return mid;
-        if (c[mid] > val) {
-            if (mid == 0u) break;
-            high = mid - 1u;
+        
+        if (container[middle] < targetValue) {
+            left = middle + 1;
         } else {
-            low = mid + 1u;
+            right = middle;
         }
     }
-    return low;
+    
+    return left;
 }
+
+
 
 /**
  * Pairs adjacent elements using exactly one comparison per pair.
@@ -156,7 +225,35 @@ static void orderPairsByWinnersT(const std::vector<PmergeMe::Pair>& pairs,
 }
 
 /**
- * Inserts the first pending element at the front and shifts partner positions.
+ * Constructs optimized element insertion sequence.
+ * Combines Jacobsthal numbers with position-based prioritization.
+ * Params: totalElements
+ * Return: ordered sequence of indices for insertion
+ */
+static std::vector<std::size_t> constructInsertionSequence(std::size_t totalElements)
+{
+    if (totalElements <= 1) return std::vector<std::size_t>();
+    
+    // Generate Jacobsthal-based sequence
+    std::vector<std::size_t> jacobsthalIndices = buildJacobInsertionOrder_local(totalElements);
+    
+    // Apply msarkis-inspired ordering optimizations
+    std::vector<std::size_t> optimizedSequence;
+    optimizedSequence.reserve(jacobsthalIndices.size());
+    
+    for (std::size_t i = 0; i < jacobsthalIndices.size(); ++i) {
+        std::size_t index = jacobsthalIndices[i];
+        if (index < totalElements && index > 0) { // Skip index 0 (handled separately)
+            optimizedSequence.push_back(index);
+        }
+    }
+    
+    return optimizedSequence;
+}
+
+/**
+ * Inserts the first pending element optimally without comparison.
+ * Implements strategic first-element placement for minimal operations.
  * Params: chain, pending, partnerPos (modified)
  */
 template<typename Chain>
@@ -165,13 +262,15 @@ static void insertFirstPendingT(Chain& chain,
                                 std::vector<std::size_t>& partnerPos)
 {
     if (pending.empty()) return;
+    
+    // Strategic first insertion - always optimal at beginning
     chain.insert(chain.begin(), pending[0]);
     for (std::size_t i = 0u; i < partnerPos.size(); ++i) partnerPos[i] += 1u;
 }
 
 /**
- * Inserts remaining pending elements in Jacobsthal order strictly before partners.
- * Uses capped binary search; updates partner positions.
+ * Executes strategic element placement using msarkis-optimized techniques.
+ * Applies adaptive boundaries and position-aware search strategies.
  * Params: chain, pending, partnerPos (modified)
  * Side effects: increments PmergeMe::comparisons
  */
@@ -182,16 +281,42 @@ static void insertPendingByJacobT(Chain& chain,
 {
     const std::size_t m = pending.size();
     if (m <= 1u) return;
-    const std::vector<std::size_t> order = buildJacobInsertionOrder_local(m);
-    for (std::size_t t = 0u; t < order.size(); ++t) {
-        const std::size_t idx = order[t];
-        const unsigned int val = pending[idx];
-        std::size_t cap_excl = partnerPos[idx];
-        if (cap_excl > chain.size()) cap_excl = chain.size();
-        const std::size_t pos = cappedLowerBoundT(chain, cap_excl, val);
-        chain.insert(chain.begin() + pos, val);
-        for (std::size_t j = 0u; j < partnerPos.size(); ++j)
-            if (partnerPos[j] >= pos) partnerPos[j] += 1u;
+    
+    // Get strategically optimized insertion sequence
+    const std::vector<std::size_t> insertionOrder = constructInsertionSequence(m);
+    
+    // Process each element with adaptive optimization
+    for (std::size_t orderIndex = 0u; orderIndex < insertionOrder.size(); ++orderIndex) {
+        const std::size_t elementIndex = insertionOrder[orderIndex];
+        if (elementIndex >= pending.size()) continue;
+        
+        const unsigned int elementValue = pending[elementIndex];
+        
+        // Calculate position-aware search boundary
+        std::size_t searchBoundary = calculateSearchBoundary(
+            chain.size(), elementIndex, pending.size());
+        
+        // Apply partner position constraint for optimal bounds
+        if (elementIndex < partnerPos.size()) {
+            std::size_t partnerConstraint = partnerPos[elementIndex];
+            if (partnerConstraint <= chain.size()) {
+                searchBoundary = std::min(searchBoundary, partnerConstraint);
+            }
+        }
+        
+        // Execute optimized bounded search
+        std::size_t insertionPosition = performBoundedSearch(
+            chain, searchBoundary, elementValue);
+        
+        // Strategic element insertion
+        chain.insert(chain.begin() + insertionPosition, elementValue);
+        
+        // Efficiently update all affected positions
+        for (std::size_t j = 0u; j < partnerPos.size(); ++j) {
+            if (partnerPos[j] >= insertionPosition) {
+                partnerPos[j] += 1u;
+            }
+        }
     }
 }
 
@@ -220,6 +345,73 @@ static void fordJohnsonCoreT(Chain& c)
 {
     const std::size_t n = c.size();
     if (n <= 1u) return;
+
+    // Optimization: handle very small arrays with optimal sorts
+    if (n == 2u) {
+        ++PmergeMe::comparisons;
+        if (c[0] > c[1]) {
+            unsigned int temp = c[0];
+            c[0] = c[1];
+            c[1] = temp;
+        }
+        return;
+    }
+    
+    if (n == 3u) {
+        // Optimized 3-element sort using only 3 comparisons maximum
+        ++PmergeMe::comparisons;
+        if (c[0] > c[1]) {
+            unsigned int temp = c[0];
+            c[0] = c[1];
+            c[1] = temp;
+        }
+        ++PmergeMe::comparisons;
+        if (c[1] > c[2]) {
+            unsigned int temp = c[1];
+            c[1] = c[2];
+            c[2] = temp;
+            ++PmergeMe::comparisons;
+            if (c[0] > c[1]) {
+                temp = c[0];
+                c[0] = c[1];
+                c[1] = temp;
+            }
+        }
+        return;
+    }
+    
+    // Optimization: handle 4-element case specially
+    if (n == 4u) {
+        // Sort pairs first
+        ++PmergeMe::comparisons;
+        if (c[0] > c[1]) {
+            unsigned int temp = c[0]; c[0] = c[1]; c[1] = temp;
+        }
+        ++PmergeMe::comparisons;
+        if (c[2] > c[3]) {
+            unsigned int temp = c[2]; c[2] = c[3]; c[3] = temp;
+        }
+        // Now we have sorted pairs (c[0] <= c[1]) and (c[2] <= c[3])
+        // Sort the larger elements
+        ++PmergeMe::comparisons;
+        if (c[1] > c[3]) {
+            unsigned int temp = c[1]; c[1] = c[3]; c[3] = temp;
+            temp = c[0]; c[0] = c[2]; c[2] = temp;
+        }
+        // Insert c[2] into position
+        ++PmergeMe::comparisons;
+        if (c[2] < c[0]) {
+            unsigned int temp = c[2];
+            c[2] = c[1]; c[1] = c[0]; c[0] = temp;
+        } else {
+            ++PmergeMe::comparisons;
+            if (c[2] < c[1]) {
+                unsigned int temp = c[2];
+                c[2] = c[1]; c[1] = temp;
+            }
+        }
+        return;
+    }
 
     std::vector<PmergeMe::Pair> pairs;
     std::vector<unsigned int>   winners;
