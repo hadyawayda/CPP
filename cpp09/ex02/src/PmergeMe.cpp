@@ -7,14 +7,14 @@
 
 int g_comparisons = 0;
 
-/*------------------------ Orthodox Canonical Form ------------------------*/
+/*------------------------- Orthodox Canonical Form -------------------------*/
 
 PmergeMe::PmergeMe() {}
 PmergeMe::PmergeMe(const PmergeMe& other) { (void)other; }
 PmergeMe& PmergeMe::operator=(const PmergeMe& other) { (void)other; return *this; }
 PmergeMe::~PmergeMe() {}
 
-/*--------------------- Internal: Jacobsthal helpers ---------------------*/
+/*---------------------- Internal: Jacobsthal helpers -----------------------*/
 
 /* Returns Jacobsthal cutoffs J(3),J(4),... that are <= size. */
 static std::vector<int> jBase(int size) {
@@ -43,7 +43,7 @@ static void buildSchedule(std::vector<int>& sched, int total) {
     sched.swap(tmp);
 }
 
-/*--------------------- Internal: bounded search ---------------------*/
+/*------------------------ Internal: bounded search ------------------------*/
 
 /* Performs lower-bound search on [0..hiIncl], inclusive-high; counts one comparison per step. */
 template <typename Cont>
@@ -62,7 +62,7 @@ static int boundedLower(const Cont& a, unsigned int key, int hiIncl) {
     return static_cast<int>(a.size());
 }
 
-/*--------------------- Internal: pair phase ---------------------*/
+/*-------------------------- Internal: pair phase --------------------------*/
 
 /* Splits input into winners/losers with exactly one comparison per pair; returns odd flag/value. */
 template <typename Cont>
@@ -77,7 +77,7 @@ static void makePairs(const Cont& in, Cont& winners, Cont& losers, bool& hasOdd,
     if (hasOdd) oddVal = in.back();
 }
 
-/*------------------------ Internal: alignment ------------------------*/
+/*--------------------------- Internal: alignment ---------------------------*/
 
 /* Aligns losers to the order of the sorted winners (inputs are unique). */
 template <typename Cont>
