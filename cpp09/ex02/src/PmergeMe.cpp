@@ -73,7 +73,7 @@ static int boundedSearch(const Cont& a, unsigned int key, int hiIncl) {
 template <typename Cont>
 static void makePairs(const Cont& in, Cont& winners, Cont& losers, bool& hasOdd, unsigned int& oddVal) {
     winners.clear(); losers.clear();
-    hasOdd = ((in.size() & 1u) != 0u);
+    hasOdd = (in.size() % 2 != 0);
     for (size_t i = 0; i + 1 < in.size(); i += 2) {
         ++g_comparisons;
         if (in[i] > in[i + 1]) { winners.push_back(in[i]); losers.push_back(in[i + 1]); }
