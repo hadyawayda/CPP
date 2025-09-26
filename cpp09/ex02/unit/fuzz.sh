@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage:
-#   bash tests/fuzz.sh [-v] [-d] [N] [ITER]
+#   bash tests/fuzz.sh [-v] [-d] [-i] [N] [ITER]
 #     -v     verbose per-run details
 #     -d     allow duplicate numbers (default: no duplicates)
+#     -i     show input test cases
 #     N      elements per run (fixed). If omitted, random N per run.
 #     ITER   number of runs (default 100 or $ITER env)
 #
@@ -19,10 +20,12 @@ ORG=$'\033[38;5;208m'
 # ---- args ----
 VERBOSE=0
 ALLOW_DUPLICATES=0
-while getopts ":vd" opt; do
+SHOW_INPUTS=0
+while getopts ":vdi" opt; do
   case "$opt" in
     v) VERBOSE=1 ;;
     d) ALLOW_DUPLICATES=1 ;;
+    i) SHOW_INPUTS=1 ;;
   esac
 done
 shift $((OPTIND-1))
@@ -170,7 +173,10 @@ for ((i=1; i<=ITER; ++i)); do
     fi
   fi
 
-  # echo "Run #$i: N=$n, args=(${args[*]})"
+  if [[ "$SHOW_INPUTS" == "1" ]]; then
+    echo
+    echo "Run #$i: args=(${args[*]})"
+  fi
 
   out=""
   if ! out="$("$BIN" "${args[@]}" 2>&1)"; then
