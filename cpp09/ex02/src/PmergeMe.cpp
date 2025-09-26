@@ -107,12 +107,9 @@ static void placeFirst(Cont& chain, const std::vector<unsigned int>& aligned) {
     if (!aligned.empty()) chain.insert(chain.begin(), aligned[0]);
 }
 
-/* Inserts remaining losers using the Jacobsthal schedule with a tight increasing cap. */
+/* Helper for Jacobsthal-guided loser insertion with dynamic cap. */
 template <typename Cont>
-static void placeRest(Cont& chain, const std::vector<unsigned int>& aligned) {
-    if (aligned.size() <= 1) return;
-    std::vector<int> sched = jacobsthalSequenceBuilder(static_cast<int>(aligned.size()));
-    buildInsertionSequence(sched, static_cast<int>(aligned.size()));
+static void jacobsthalInsert(Cont& chain, const std::vector<unsigned int>& aligned, const std::vector<int>& sched) {
     int cap = 3;
     for (size_t s = 0; s < sched.size(); ++s) {
         if (s > 0 && sched[s] > sched[s - 1]) cap = 2 * cap + 1;
@@ -122,6 +119,15 @@ static void placeRest(Cont& chain, const std::vector<unsigned int>& aligned) {
             chain.insert(chain.begin() + pos, aligned[idx]);
         }
     }
+}
+
+/* Inserts remaining losers using the Jacobsthal schedule with a tight increasing cap. */
+template <typename Cont>
+static void placeRest(Cont& chain, const std::vector<unsigned int>& aligned) {
+    if (aligned.size() <= 1) return;
+    std::vector<int> sched = jacobsthalSequenceBuilder(static_cast<int>(aligned.size()));
+    buildInsertionSequence(sched, static_cast<int>(aligned.size()));
+    jacobsthalInsert(chain, aligned, sched);
 }
 
 /*------------------------ Internal: Ford–Johnson core ------------------------*/
@@ -179,7 +185,7 @@ void PmergeMe::parseInputs(int argc, char** argv,
     if (count < 2) throw std::invalid_argument("Error");
 }
 
-/*------------------------ Public Entrypoints ------------------------*/
+/*------------------------- Public Entrypoints -------------------------*/
 
 /* Sorts vector<unsigned int> in place using Ford–Johnson. */
 void PmergeMe::fordJohnsonVect(std::vector<unsigned int>& data) {
