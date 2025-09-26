@@ -17,7 +17,7 @@ PmergeMe::~PmergeMe() {}
 /*---------------------- Internal: Jacobsthal helpers -----------------------*/
 
 /* Returns Jacobsthal cutoffs J(3),J(4),... that are <= size. */
-static std::vector<int> jBase(int size) {
+static std::vector<int> jacobsthalSequenceBuilder(int size) {
     std::vector<int> out;
     int a = 0, b = 1;
     for (int k = 2;; ++k) {
@@ -31,8 +31,8 @@ static std::vector<int> jBase(int size) {
     return out;
 }
 
-/* Expands base cutoffs into a 1-based insertion schedule of length total-1. */
-static void buildSchedule(std::vector<int>& sched, int total) {
+/* Expands base cutoffs into a 1-based insertion sequence of length total-1. */
+static void buildInsertionSequence(std::vector<int>& sched, int total) {
     std::vector<int> tmp;
     std::vector<char> used(total + 1, 0);
     for (size_t i = 0; i < sched.size(); ++i)
@@ -45,12 +45,9 @@ static void buildSchedule(std::vector<int>& sched, int total) {
 
 /*------------------------ Internal: bounded search ------------------------*/
 
-/* Performs lower-bound search on [0..hiIncl], inclusive-high; counts one comparison per step. */
+/* Performs lower-bound binary search on [lo..hi], inclusive-high; counts one comparison per step. */
 template <typename Cont>
-static int boundedLower(const Cont& a, unsigned int key, int hiIncl) {
-    if (a.empty()) return 0;
-    if (hiIncl >= static_cast<int>(a.size())) hiIncl = static_cast<int>(a.size()) - 1;
-    int lo = 0, hi = hiIncl;
+static int binarySearch(const Cont& a, unsigned int key, int lo, int hi) {
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
         ++g_comparisons;
@@ -60,6 +57,14 @@ static int boundedLower(const Cont& a, unsigned int key, int hiIncl) {
     }
     if (lo < static_cast<int>(a.size()) && key < a[lo]) return lo;
     return static_cast<int>(a.size());
+}
+
+/* Wrapper for bounded lower-bound search on [0..hiIncl], inclusive-high. */
+template <typename Cont>
+static int boundedSearch(const Cont& a, unsigned int key, int hiIncl) {
+    if (a.empty()) return 0;
+    if (hiIncl >= static_cast<int>(a.size())) hiIncl = static_cast<int>(a.size()) - 1;
+    return binarySearch(a, key, 0, hiIncl);
 }
 
 /*-------------------------- Internal: pair phase --------------------------*/
@@ -106,14 +111,14 @@ static void placeFirst(Cont& chain, const std::vector<unsigned int>& aligned) {
 template <typename Cont>
 static void placeRest(Cont& chain, const std::vector<unsigned int>& aligned) {
     if (aligned.size() <= 1) return;
-    std::vector<int> sched = jBase(static_cast<int>(aligned.size()));
-    buildSchedule(sched, static_cast<int>(aligned.size()));
+    std::vector<int> sched = jacobsthalSequenceBuilder(static_cast<int>(aligned.size()));
+    buildInsertionSequence(sched, static_cast<int>(aligned.size()));
     int cap = 3;
     for (size_t s = 0; s < sched.size(); ++s) {
         if (s > 0 && sched[s] > sched[s - 1]) cap = 2 * cap + 1;
         const int idx = sched[s] - 1;
         if (idx >= 1 && idx < static_cast<int>(aligned.size())) {
-            const int pos = boundedLower(chain, aligned[idx], cap - 1);
+            const int pos = boundedSearch(chain, aligned[idx], cap - 1);
             chain.insert(chain.begin() + pos, aligned[idx]);
         }
     }
