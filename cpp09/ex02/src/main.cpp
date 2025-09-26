@@ -2,16 +2,15 @@
 #include <iostream>
 #include <vector>
 #include <deque>
-#include <sstream>
-#include <limits>
-#include <cctype>
 #include <sys/time.h>
 
+/* Returns current time in microseconds. */
 static long long nowMicros() {
     struct timeval tv; gettimeofday(&tv, 0);
     return static_cast<long long>(tv.tv_sec) * 1000000LL + tv.tv_usec;
 }
 
+/* Prints a single line with a prefix and all elements of the container. */
 template <typename Cont>
 static void printLine(const char* prefix, const Cont& c) {
     std::cout << prefix;
@@ -20,65 +19,40 @@ static void printLine(const char* prefix, const Cont& c) {
     std::cout << std::endl;
 }
 
-static bool parseOneToken(const std::string& tok, unsigned int& value) {
-    if (tok.empty()) return false;
-    for (std::string::size_type i = 0; i < tok.size(); ++i) {
-        unsigned char ch = static_cast<unsigned char>(tok[i]);
-        if (!std::isdigit(ch)) return false;
-    }
-    std::istringstream iss(tok);
-    unsigned long ul = 0; iss >> ul;
-    if (!iss || !iss.eof()) return false;
-    if (ul == 0 || ul > std::numeric_limits<unsigned int>::max()) return false;
-    value = static_cast<unsigned int>(ul);
-    return true;
-}
-
-static bool parseArgsToBoth(int argc, char** argv,
-                            std::vector<unsigned int>& outVec,
-                            std::deque<unsigned int>&  outDeq)
-{
-    for (int i = 1; i < argc; ++i) {
-        std::istringstream ss(argv[i]);
-        std::string tok;
-        while (ss >> tok) {
-            unsigned int v = 0;
-            if (!parseOneToken(tok, v)) return false;
-            outVec.push_back(v);
-            outDeq.push_back(v);
-        }
-    }
-    return !outVec.empty();
-}
-
+/* Program entry: parses inputs, runs vector and deque sorts, reports timing and comparisons. */
 int main(int argc, char** argv) {
     std::vector<unsigned int> inputV;
     std::deque<unsigned int>  inputD;
 
-    if (!parseArgsToBoth(argc, argv, inputV, inputD)) {
+    try {
+        PmergeMe::parseInputs(argc, argv, inputV, inputD);
+    } catch (...) {
         std::cerr << "Error" << std::endl;
         return 1;
     }
-
-    try { PmergeMe::validateArgs(argv); }
-    catch (...) { std::cerr << "Error" << std::endl; return 1; }
 
     printLine("Before:", inputV);
 
     std::vector<unsigned int> v = inputV;
     std::deque<unsigned int>  d = inputD;
 
-    PmergeMe sorter;
+    PmergeMe engine;
 
+    const int startTotal = g_comparisons;
+
+    const int startVec = g_comparisons;
     long long t0 = nowMicros();
-    sorter.fordJohnsonVect(v);
+    engine.fordJohnsonVect(v);
     long long t1 = nowMicros();
-    const int vecCmp = sorter.vectorComparisons();
+    const int vecCmp = g_comparisons - startVec;
 
+    const int startDeq = g_comparisons;
     long long t2 = nowMicros();
-    sorter.fordJohnsonDeq(d);
+    engine.fordJohnsonDeq(d);
     long long t3 = nowMicros();
-    const int deqCmp = sorter.dequeComparisons();
+    const int deqCmp = g_comparisons - startDeq;
+
+    const int totalCmp = g_comparisons - startTotal;
 
     printLine("After: ", v);
 
@@ -86,12 +60,10 @@ int main(int argc, char** argv) {
     std::cout << "Time to process a range of " << N
               << " elements with std::vector : " << (t1 - t0) << " us\n";
     std::cout << "Comparisons (vector): " << vecCmp << "\n";
-
     std::cout << "Time to process a range of " << N
               << " elements with std::deque  : " << (t3 - t2) << " us\n";
     std::cout << "Comparisons (deque): " << deqCmp << "\n";
-
-    std::cout << "Comparisons (total since start): " << (vecCmp + deqCmp) << std::endl;
+    std::cout << "Comparisons (total since start): " << totalCmp << std::endl;
 
     for (std::size_t i = 1; i < v.size(); ++i)
         if (v[i-1] > v[i]) { std::cerr << "ERROR: vector not sorted\n"; return 1; }

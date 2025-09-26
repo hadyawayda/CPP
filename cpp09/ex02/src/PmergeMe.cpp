@@ -1,38 +1,38 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   PmergeMe.cpp                                       :+:      :+:    :+:   */
-/*                                                                            */
-/* ************************************************************************** */
-
 #include "PmergeMe.hpp"
 #include <set>
 #include <sstream>
 #include <climits>
 #include <algorithm>
+#include <cctype>
 
-/** File-local: Jacobsthal number J(n). */
-static int fj_jnum(int n) {
-    if (n == 0) return 0;
-    if (n == 1) return 1;
-    int a = 0, b = 1, c = 0;
-    for (int i = 2; i <= n; ++i) { c = b + 2 * a; a = b; b = c; }
-    return c;
-}
+int g_comparisons = 0;
 
-/** File-local: Jacobsthal cutoffs ≤ size, starting from J(3). */
-static std::vector<int> fj_jbase(int size) {
+/*------------------------ Orthodox Canonical Form ------------------------*/
+
+PmergeMe::PmergeMe() {}
+PmergeMe::PmergeMe(const PmergeMe& other) { (void)other; }
+PmergeMe& PmergeMe::operator=(const PmergeMe& other) { (void)other; return *this; }
+PmergeMe::~PmergeMe() {}
+
+/*--------------------- Internal: Jacobsthal helpers ---------------------*/
+
+/* Returns Jacobsthal cutoffs J(3),J(4),... that are <= size. */
+static std::vector<int> jBase(int size) {
     std::vector<int> out;
-    for (int k = 3;; ++k) {
-        int j = fj_jnum(k);
-        if (j > size) break;
-        out.push_back(j);
+    int a = 0, b = 1;
+    for (int k = 2;; ++k) {
+        int j = b + 2 * a;
+        a = b; b = j;
+        if (k >= 3) {
+            if (j > size) break;
+            out.push_back(j);
+        }
     }
     return out;
 }
 
-/** File-local: expand base cutoffs to a full 1-based insertion schedule of length total-1. */
-static void fj_expandSchedule(std::vector<int>& sched, int total) {
+/* Expands base cutoffs into a 1-based insertion schedule of length total-1. */
+static void buildSchedule(std::vector<int>& sched, int total) {
     std::vector<int> tmp;
     std::vector<char> used(total + 1, 0);
     for (size_t i = 0; i < sched.size(); ++i)
@@ -43,92 +43,119 @@ static void fj_expandSchedule(std::vector<int>& sched, int total) {
     sched.swap(tmp);
 }
 
-/** File-local: bounded binary search with inclusive high bound; bumps cmp per iteration. */
+/*--------------------- Internal: bounded search ---------------------*/
+
+/* Performs lower-bound search on [0..hiIncl], inclusive-high; counts one comparison per step. */
 template <typename Cont>
-static int fj_boundSearch(const Cont& main, unsigned int key, int hiIncl, int& cmp) {
-    if (main.empty()) return 0;
-    if (hiIncl >= static_cast<int>(main.size())) hiIncl = static_cast<int>(main.size()) - 1;
+static int boundedLower(const Cont& a, unsigned int key, int hiIncl) {
+    if (a.empty()) return 0;
+    if (hiIncl >= static_cast<int>(a.size())) hiIncl = static_cast<int>(a.size()) - 1;
     int lo = 0, hi = hiIncl;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        ++cmp;
-        if (main[mid] == key) return mid;
-        else if (main[mid] > key) { if (mid == 0) break; hi = mid - 1; }
+        ++g_comparisons;
+        if (a[mid] == key) return mid;
+        else if (a[mid] > key) { if (mid == 0) break; hi = mid - 1; }
         else lo = mid + 1;
     }
-    if (lo < static_cast<int>(main.size()) && key < main[lo]) return lo;
-    return static_cast<int>(main.size());
+    if (lo < static_cast<int>(a.size()) && key < a[lo]) return lo;
+    return static_cast<int>(a.size());
 }
 
-/** File-local: Ford–Johnson core over a generic contiguous/indexable container of unsigned int. */
+/*--------------------- Internal: pair phase ---------------------*/
+
+/* Splits input into winners/losers with exactly one comparison per pair; returns odd flag/value. */
 template <typename Cont>
-static Cont fondJohnsonCore(Cont& data, int& cmpCounter) {
-    if (data.empty()) return Cont();
-    if (data.size() == 1) return data;
-    if (data.size() == 2) {
-        Cont r = data;
-        ++cmpCounter;
-        if (r[0] > r[1]) std::swap(r[0], r[1]);
-        return r;
+static void makePairs(const Cont& in, Cont& winners, Cont& losers, bool& hasOdd, unsigned int& oddVal) {
+    winners.clear(); losers.clear();
+    hasOdd = ((in.size() & 1u) != 0u);
+    for (size_t i = 0; i + 1 < in.size(); i += 2) {
+        ++g_comparisons;
+        if (in[i] > in[i + 1]) { winners.push_back(in[i]); losers.push_back(in[i + 1]); }
+        else { losers.push_back(in[i]); winners.push_back(in[i + 1]); }
     }
+    if (hasOdd) oddVal = in.back();
+}
 
-    Cont winners, losers, res;
-    const bool odd = (data.size() & 1u);
-    for (size_t i = 0; i + 1 < data.size(); i += 2) {
-        ++cmpCounter;
-        if (data[i] > data[i + 1]) { winners.push_back(data[i]); losers.push_back(data[i + 1]); }
-        else { losers.push_back(data[i]); winners.push_back(data[i + 1]); }
-    }
-    if (odd) losers.push_back(data.back());
+/*------------------------ Internal: alignment ------------------------*/
 
-    Cont sortedWinners = fondJohnsonCore(winners, cmpCounter);
-
-    std::vector<unsigned int> alignedLosers(sortedWinners.size());
-    for (size_t i = 0; i < sortedWinners.size(); ++i) {
-        for (size_t j = 0; j < winners.size(); ++j) {
-            if (winners[j] == sortedWinners[i]) { alignedLosers[i] = losers[j]; break; }
+/* Aligns losers to the order of the sorted winners (inputs are unique). */
+template <typename Cont>
+static std::vector<unsigned int> alignLosers(const Cont& winnersOrig,
+                                             const Cont& losersOrig,
+                                             const Cont& winnersSorted)
+{
+    std::vector<unsigned int> aligned(winnersSorted.size());
+    for (size_t i = 0; i < winnersSorted.size(); ++i) {
+        for (size_t j = 0; j < winnersOrig.size(); ++j) {
+            if (winnersOrig[j] == winnersSorted[i]) { aligned[i] = losersOrig[j]; break; }
         }
     }
-    if (odd) alignedLosers.push_back(losers.back());
+    return aligned;
+}
 
-    res = sortedWinners;
+/*------------------------ Internal: insertion steps ------------------------*/
 
-    std::vector<int> sched = fj_jbase(static_cast<int>(alignedLosers.size()));
-    fj_expandSchedule(sched, static_cast<int>(alignedLosers.size()));
+/* Inserts the first pending loser at the front with no comparisons. */
+template <typename Cont>
+static void placeFirst(Cont& chain, const std::vector<unsigned int>& aligned) {
+    if (!aligned.empty()) chain.insert(chain.begin(), aligned[0]);
+}
 
-    res.insert(res.begin(), alignedLosers[0]);
-
+/* Inserts remaining losers using the Jacobsthal schedule with a tight increasing cap. */
+template <typename Cont>
+static void placeRest(Cont& chain, const std::vector<unsigned int>& aligned) {
+    if (aligned.size() <= 1) return;
+    std::vector<int> sched = jBase(static_cast<int>(aligned.size()));
+    buildSchedule(sched, static_cast<int>(aligned.size()));
     int cap = 3;
     for (size_t s = 0; s < sched.size(); ++s) {
         if (s > 0 && sched[s] > sched[s - 1]) cap = 2 * cap + 1;
-        if (sched[s] <= static_cast<int>(alignedLosers.size()) && sched[s] != 1) {
-            const int idx = sched[s] - 1;
-            const int pos = fj_boundSearch(res, alignedLosers[idx], cap - 1, cmpCounter);
-            if (pos >= 0) res.insert(res.begin() + pos, alignedLosers[idx]);
+        const int idx = sched[s] - 1;
+        if (idx >= 1 && idx < static_cast<int>(aligned.size())) {
+            const int pos = boundedLower(chain, aligned[idx], cap - 1);
+            chain.insert(chain.begin() + pos, aligned[idx]);
         }
     }
-    return res;
 }
 
-/** Canonical constructor. */
-PmergeMe::PmergeMe() : _cmpVec(0), _cmpDeq(0) {}
-/** Canonical copy. */
-PmergeMe::PmergeMe(const PmergeMe& other) { *this = other; }
-/** Canonical assignment. */
-PmergeMe& PmergeMe::operator=(const PmergeMe& other) {
-    if (this != &other) { _cmpVec = other._cmpVec; _cmpDeq = other._cmpDeq; }
-    return *this;
-}
-/** Canonical destructor. */
-PmergeMe::~PmergeMe() {}
+/*------------------------ Internal: Ford–Johnson core ------------------------*/
 
-/** Validates argv: positive integers, unique, at least two. */
-void PmergeMe::validateArgs(char **av) {
-    if (!av[1]) throw std::invalid_argument("Error");
+/* Recursively sorts using the pair phase, recursion on winners, and Jacobsthal-guided insertions. */
+template <typename Cont>
+static Cont fordJohnsonCore(Cont& data) {
+    if (data.empty())  return Cont();
+    if (data.size() == 1) return data;
+    if (data.size() == 2) {
+        Cont r = data;
+        ++g_comparisons;
+        if (r[0] > r[1]) std::swap(r[0], r[1]);
+        return r;
+    }
+    Cont winners, losers;
+    bool hasOdd = false; unsigned int oddVal = 0;
+    makePairs(data, winners, losers, hasOdd, oddVal);
+    Cont sortedWinners = fordJohnsonCore(winners);
+    std::vector<unsigned int> aligned = alignLosers(winners, losers, sortedWinners);
+    if (hasOdd) aligned.push_back(oddVal);
+    Cont chain = sortedWinners;
+    placeFirst(chain, aligned);
+    placeRest(chain, aligned);
+    return chain;
+}
+
+/*------------------------ Parsing & Validation ------------------------*/
+
+/* Parses argv, validates positives/uniqueness/size>=2, fills both containers or throws. */
+void PmergeMe::parseInputs(int argc, char** argv,
+                           std::vector<unsigned int>& outVec,
+                           std::deque<unsigned int>&  outDeq)
+{
+    if (argc < 2) throw std::invalid_argument("Error");
     std::set<unsigned int> seen;
     int count = 0;
-    for (int i = 1; av[i]; ++i) {
-        std::stringstream ss(av[i]);
+    for (int i = 1; i < argc; ++i) {
+        std::stringstream ss(argv[i]);
         std::string tok;
         while (ss >> tok) {
             for (size_t j = 0; j < tok.size(); ++j) {
@@ -139,26 +166,22 @@ void PmergeMe::validateArgs(char **av) {
             if (v == 0UL || v > UINT_MAX) throw std::invalid_argument("Error");
             if (!seen.insert(static_cast<unsigned int>(v)).second)
                 throw std::invalid_argument("Error");
+            outVec.push_back(static_cast<unsigned int>(v));
+            outDeq.push_back(static_cast<unsigned int>(v));
             ++count;
         }
     }
     if (count < 2) throw std::invalid_argument("Error");
 }
 
-/** Sorts vector<unsigned int> in place using Ford–Johnson. */
+/*------------------------ Public Entrypoints ------------------------*/
+
+/* Sorts vector<unsigned int> in place using Ford–Johnson. */
 void PmergeMe::fordJohnsonVect(std::vector<unsigned int>& data) {
-    _cmpVec = 0;
-    data = fondJohnsonCore(data, _cmpVec);
+    data = fordJohnsonCore(data);
 }
 
-/** Sorts deque<unsigned int> in place using Ford–Johnson. */
+/* Sorts deque<unsigned int> in place using Ford–Johnson. */
 void PmergeMe::fordJohnsonDeq(std::deque<unsigned int>& data) {
-    _cmpDeq = 0;
-    data = fondJohnsonCore(data, _cmpDeq);
+    data = fordJohnsonCore(data);
 }
-
-/** Comparison count from last vector run. */
-int PmergeMe::vectorComparisons() const { return _cmpVec; }
-
-/** Comparison count from last deque run. */
-int PmergeMe::dequeComparisons() const { return _cmpDeq; }

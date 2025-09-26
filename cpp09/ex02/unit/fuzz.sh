@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage:
-#   bash tests/fuzz.sh [-v] [N] [ITER]
+#   bash tests/fuzz.sh [-v] [-d] [N] [ITER]
 #     -v     verbose per-run details
+#     -d     allow duplicate numbers (default: no duplicates)
 #     N      elements per run (fixed). If omitted, random N per run.
 #     ITER   number of runs (default 100 or $ITER env)
 #
@@ -17,9 +18,11 @@ ORG=$'\033[38;5;208m'
 
 # ---- args ----
 VERBOSE=0
-while getopts ":v" opt; do
+ALLOW_DUPLICATES=0
+while getopts ":vd" opt; do
   case "$opt" in
     v) VERBOSE=1 ;;
+    d) ALLOW_DUPLICATES=1 ;;
   esac
 done
 shift $((OPTIND-1))
@@ -111,10 +114,61 @@ for ((i=1; i<=ITER; ++i)); do
 
   # Generate args in [1..MAX_VAL]
   args=()
-  for ((k=0; k<n; ++k)); do
-    val=$(( $(rand32) % MAX_VAL + 1 ))
-    args+=("$val")
-  done
+  if [[ "$ALLOW_DUPLICATES" == "1" ]]; then
+    # Allow duplicates: simple generation
+    for ((k=0; k<n; ++k)); do
+      val=$(( $(rand32) % MAX_VAL + 1 ))
+      args+=("$val")
+    done
+  else
+    # No duplicates: use efficient method based on ratio
+    if [[ $n -gt $MAX_VAL ]]; then
+      printf "%b\n" "${RED}Warning: Cannot generate $n unique numbers from range [1..$MAX_VAL].${RST}" >&2
+      printf "%b\n" "${YEL}Consider using -d flag to allow duplicates or increase MAX_VAL.${RST}" >&2
+      continue  # Skip this iteration
+    fi
+    
+    # Ultra-fast approach: generate many candidates and use external tools
+    # Generate more candidates than needed to ensure we get enough unique ones
+    multiplier=3
+    if [[ $n -lt 50 ]]; then multiplier=5; fi
+    
+    # Use a more efficient approach with external commands
+    candidates_count=$((n * multiplier))
+    if [[ $candidates_count -gt 1000 ]]; then candidates_count=1000; fi
+    
+    # Generate candidates using a single awk command for speed
+    args=($(awk -v n="$candidates_count" -v max_val="$MAX_VAL" -v seed="$RANDOM" '
+      BEGIN {
+        srand(seed);
+        for(i=0; i<n; i++) {
+          print int(rand() * max_val) + 1;
+        }
+      }' | sort -n | uniq | head -n "$n"))
+    
+    # If we still don't have enough, use simple rejection sampling  
+    if [[ ${#args[@]} -lt $n ]]; then
+      # Fallback: simple rejection with timeout
+      declare -A used_vals
+      for val in "${args[@]}"; do used_vals[$val]=1; done
+      
+      attempts=0
+      max_attempts=$((n * 20))  # Reasonable limit
+      while [[ ${#args[@]} -lt $n && $attempts -lt $max_attempts ]]; do
+        val=$(( $(rand32) % MAX_VAL + 1 ))
+        if [[ -z "${used_vals[$val]:-}" ]]; then
+          used_vals[$val]=1
+          args+=("$val")
+        fi
+        ((attempts++))
+      done
+      
+      # If still not enough, just fill with random (shouldn't happen with MAX_VAL=10000)
+      while [[ ${#args[@]} -lt $n ]]; do
+        args+=("$(( $(rand32) % MAX_VAL + 1 ))")
+      done
+    fi
+  fi
 
   # echo "Run #$i: N=$n, args=(${args[*]})"
 
